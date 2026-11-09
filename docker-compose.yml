@@ -1,0 +1,111 @@
+# Runs the whole system locally, offline: `docker compose up --build`
+# Also our fallback for the demo if the cloud or Telstra sandbox misbehaves.
+name: four-pillars
+
+x-node-healthcheck: &node-health
+  interval: 10s
+  timeout: 3s
+  retries: 5
+
+x-python-healthcheck: &python-health
+  interval: 10s
+  timeout: 3s
+  retries: 5
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pillars
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pillars-local}
+      POSTGRES_DB: pillars
+    ports: ["5432:5432"]
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pillars -d pillars"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  telstra-fake:
+    build: { context: ., dockerfile: services/node.Dockerfile, args: { SERVICE_DIR: services/telstra-fake } }
+    environment:
+      PORT: 8083
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports: ["8083:8083"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8083/health"]
+      <<: *node-health
+
+  telstra-gateway:
+    build: { context: ., dockerfile: services/node.Dockerfile, args: { SERVICE_DIR: services/telstra-gateway } }
+    environment:
+      PORT: 8082
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELSTRA_BASE_URL: http://telstra-fake:8083
+      TELSTRA_CLIENT_ID: ${TELSTRA_CLIENT_ID:-}
+      TELSTRA_CLIENT_SECRET: ${TELSTRA_CLIENT_SECRET:-}
+    ports: ["8082:8082"]
+    depends_on:
+      telstra-fake: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8082/health"]
+      <<: *node-health
+
+  ingest-api:
+    build: { context: ., dockerfile: services/node.Dockerfile, args: { SERVICE_DIR: services/ingest-api } }
+    environment:
+      PORT: 8081
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://pillars:${POSTGRES_PASSWORD:-pillars-local}@postgres:5432/pillars?options=-csearch_path%3Dingest
+      ENGINE_URL: http://engine:8084
+    ports: ["8081:8081"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
+      <<: *node-health
+
+  engine:
+    build: { context: services/engine }
+    environment:
+      PORT: 8084
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GATEWAY_URL: http://telstra-gateway:8082
+      DATABASE_URL: postgresql://pillars:${POSTGRES_PASSWORD:-pillars-local}@postgres:5432/pillars?options=-csearch_path%3Dengine
+    ports: ["8084:8084"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      telstra-gateway: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8084/health')"]
+      <<: *python-health
+
+  twin:
+    build: { context: services/twin }
+    environment:
+      PORT: 8085
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELSTRA_FAKE_URL: http://telstra-fake:8083
+      INGEST_URL: http://ingest-api:8081
+    ports: ["8085:8085"]
+    depends_on:
+      telstra-fake: { condition: service_healthy }
+      ingest-api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/health')"]
+      <<: *python-health
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+      args: { VITE_INGEST_URL: "http://localhost:8081" }
+    ports: ["3000:80"]
+    depends_on:
+      ingest-api: { condition: service_healthy }
+
+volumes:
+  pgdata:
