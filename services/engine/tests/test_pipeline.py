@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from engine.contracts import Cause, MeterSilentEvent, reason_group
+from engine.contracts import Action, Cause, MeterSilentEvent, reason_group
 from engine.pipeline import assess
 from engine.topology import Meter, Topology
 
@@ -52,6 +52,7 @@ def test_power_scenario_gives_power():
     assert assessment.cluster.transformer_ids == {"T5"}
     assert assessment.clues.transformer_share == 1.0
     assert assessment.result.confidence == 0.9
+    assert assessment.decision.action is Action.DISPATCH_POWER_CREW
 
 
 def test_power_is_already_called_when_only_the_last_gasps_have_arrived():
@@ -72,6 +73,8 @@ def test_network_scenario_gets_more_confident_once_telstra_lists_it():
     assert after.result.cause is Cause.NETWORK
     assert before.cluster.size == 56
     assert before.result.confidence < 0.6 < after.result.confidence
+    assert before.decision.action is Action.MANUAL_REVIEW
+    assert after.decision.action is Action.WAIT_FOR_NETWORK
 
 
 def test_a_lone_meter_fault_next_to_a_power_outage_stays_separate():
@@ -82,6 +85,7 @@ def test_a_lone_meter_fault_next_to_a_power_outage_stays_separate():
     assert set(by_cause) == {Cause.POWER, Cause.METER_FAULT}
     assert by_cause[Cause.METER_FAULT].cluster.size == 1
     assert by_cause[Cause.POWER].cluster.size == 20
+    assert by_cause[Cause.METER_FAULT].decision.action is Action.DISPATCH_METER_TECH
 
 
 def test_quiet_day_gives_nothing():
