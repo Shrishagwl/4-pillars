@@ -15,7 +15,7 @@ if they drop close together.
 
 import logging
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -88,11 +88,16 @@ def silent_meters_in_window(
     topology: Topology,
     now: datetime,
     window: timedelta = DEFAULT_WINDOW,
+    restored: Mapping[str, datetime] | None = None,
 ) -> list[SilentMeter]:
     """Meters that went silent between `now - window` and `now`, one entry per meter.
 
     If a meter has several events in the window we keep the earliest (when it first dropped).
     Events for SIMs that are not in the topology are skipped.
+
+    `restored` maps msisdn -> when that SIM came back online. A meter that came back after it
+    dropped is not silent any more. Telstra's API has no such event today, so this is None
+    unless we are testing the "restore event" API proposal.
     """
     earliest: dict[str, SilentMeter] = {}
     unknown = 0
@@ -103,6 +108,10 @@ def silent_meters_in_window(
         if meter is None:
             unknown += 1
             continue
+        if restored is not None:
+            back_at = restored.get(event.msisdn)
+            if back_at is not None and event.eventTime <= back_at <= now:
+                continue
         seen = earliest.get(meter.meter_id)
         if seen is None or event.eventTime < seen.silent_at:
             earliest[meter.meter_id] = SilentMeter(meter, event.reasonCode, event.eventTime)
@@ -117,9 +126,10 @@ def cluster_silent_meters(
     now: datetime,
     window: timedelta = DEFAULT_WINDOW,
     suburb_link_gap: timedelta = DEFAULT_SUBURB_LINK_GAP,
+    restored: Mapping[str, datetime] | None = None,
 ) -> list[Cluster]:
     """Group the meters that went silent in the window. Returns clusters, earliest first."""
-    silent = silent_meters_in_window(events, topology, now, window)
+    silent = silent_meters_in_window(events, topology, now, window, restored)
     groups = _UnionFind(len(silent))
 
     by_transformer: dict[str, list[int]] = defaultdict(list)

@@ -7,6 +7,7 @@ Each clue is picked because the causes leave different fingerprints:
   NETWORK  many transformers each lose part of their meters over a few minutes, mostly
            DETECTION_TIMEOUT, and Telstra lists an outage for the suburb.
   METER    one meter, nothing else around it.
+  TAMPER   one meter (or a couple), and Location Verification says the SIM has moved.
 
 This module only measures. It does not decide anything; that is rules.py.
 """
@@ -21,6 +22,9 @@ from .contracts import ReasonGroup, reason_group
 from .topology import Topology
 
 DEFAULT_BURST = timedelta(seconds=30)
+# Location Verification costs one API call per SIM, so we only ask for small clusters.
+# A moved SIM explains one silent meter, not three hundred.
+LOCATION_CHECK_MAX_METERS = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +47,9 @@ class Clues:
     # Share of the cluster in a suburb where Telstra lists an outage.
     # None means the Outage API has not been asked yet, which is different from 0.0.
     outage_share: float | None
+    # Share of the cluster whose SIM is not where the meter is installed.
+    # None means Location Verification was not asked (cluster too big, or not available).
+    location_mismatch_share: float | None = None
 
     @property
     def crosses_transformers(self) -> bool:
@@ -54,11 +61,21 @@ def compute_clues(
     topology: Topology,
     outage_suburbs: Collection[str] | None = None,
     burst: timedelta = DEFAULT_BURST,
+    *,
+    outage_msisdns: Collection[str] | None = None,
+    moved_msisdns: Collection[str] | None = None,
 ) -> Clues:
     """Measure one cluster.
 
     `outage_suburbs` is the set of suburbs where Network Availability lists a current outage.
     Pass None when it has not been checked yet.
+
+    `outage_msisdns` is the more exact version: the SIMs inside the listed outage areas. When
+    it is given it is used instead of the suburbs. Today's API only gives an area for some
+    outages, so this is for testing the "outage shapes" API proposal.
+
+    `moved_msisdns` is the set of SIMs that Location Verification says are not at their
+    meter's address. Only looked at for clusters of up to LOCATION_CHECK_MAX_METERS.
     """
     members = cluster.members
     count = len(members)
@@ -73,8 +90,14 @@ def compute_clues(
     per_group = Counter(reason_group(m.reason_code) for m in members)
 
     outage_share = None
-    if outage_suburbs is not None:
+    if outage_msisdns is not None:
+        outage_share = sum(1 for m in members if m.meter.msisdn in outage_msisdns) / count
+    elif outage_suburbs is not None:
         outage_share = sum(1 for m in members if m.meter.suburb in outage_suburbs) / count
+
+    location_mismatch_share = None
+    if moved_msisdns is not None and count <= LOCATION_CHECK_MAX_METERS:
+        location_mismatch_share = sum(1 for m in members if m.meter.msisdn in moved_msisdns) / count
 
     return Clues(
         meter_count=count,
@@ -90,4 +113,5 @@ def compute_clues(
         burst_share=in_burst / count,
         reason_shares={group: per_group[group] / count for group in ReasonGroup},
         outage_share=outage_share,
+        location_mismatch_share=location_mismatch_share,
     )
