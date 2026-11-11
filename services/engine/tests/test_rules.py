@@ -101,3 +101,21 @@ def test_probabilities_cover_every_cause_and_sum_to_one():
 def test_thresholds_can_be_changed():
     strict = RuleThresholds(power_transformer_share=0.99)
     assert score_v1(clues(**WHOLE_TRANSFORMER), strict).cause is not Cause.POWER
+
+
+def test_one_stray_meter_does_not_hide_a_power_cut():
+    # 100 of 100 on one transformer plus one meter on another: the average share is 50%.
+    stray = {
+        **WHOLE_TRANSFORMER,
+        "meter_count": 101,
+        "transformer_count": 2,
+        "transformer_share": 0.5,
+        "max_transformer_share": 1.0,
+    }
+    assert score_v1(clues(**stray)).cause is Cause.POWER
+
+
+def test_two_meters_on_two_transformers_is_not_called_network():
+    result = score_v1(clues(meter_count=2, transformer_count=2, burst_share=0.5))
+    assert result.cause is Cause.METER_FAULT
+    assert result.rule == "unclear"

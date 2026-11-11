@@ -44,7 +44,7 @@ def build_evidence(
         "them are silent",
         f"Timing: first drop {_clock(cluster.first_silent_at)}, "
         f"last {_clock(cluster.last_silent_at)} ({clues.spread_seconds:.0f} s apart); "
-        f"{clues.burst_share:.0%} dropped in the first burst",
+        f"{clues.burst_share:.0%} dropped within 30 s of each other",
     ]
 
     mix = [

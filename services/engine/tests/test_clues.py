@@ -66,7 +66,7 @@ def test_network_outage_across_two_transformers():
     assert clues.max_transformer_share == 0.75  # T1: 3 of 4
     assert clues.suburb_share == pytest.approx(5 / 8)
     assert clues.spread_seconds == 120
-    assert clues.burst_share == 0.2  # only the first one is inside 30 s
+    assert clues.burst_share == 0.4  # at most 2 of the 5 fall inside any 30 s
     assert clues.reason_shares[ReasonGroup.DETECTION_TIMEOUT] == 1.0
     assert clues.outage_share == 1.0
 
@@ -96,3 +96,15 @@ def test_reason_shares_cover_every_group_and_sum_to_one():
     assert set(shares) == set(ReasonGroup)
     assert shares[ReasonGroup.UNKNOWN] == 0.0
     assert sum(shares.values()) == pytest.approx(1.0)
+
+
+def test_burst_is_found_even_when_a_stray_meter_dropped_earlier():
+    # T2-M1 dropped two minutes before T1 lost power. The burst is still 4 of 5.
+    c = cluster(
+        ("T2-M1", 0, 7), ("T1-M1", 120, 6), ("T1-M2", 121, 6), ("T1-M3", 123, 6), ("T1-M4", 125, 6)
+    )
+    clues = compute_clues(c, TOPOLOGY)
+
+    assert clues.burst_share == 0.8
+    assert clues.max_transformer_share == 1.0
+    assert clues.transformer_share == pytest.approx(5 / 8)

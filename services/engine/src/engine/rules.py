@@ -3,9 +3,9 @@
 The rules are checked in order and the first match wins:
 
   1. TAMPER       Location Verification says the SIM is not where the meter is
-  2. POWER        most of a transformer is silent and most of the cluster dropped in a burst
+  2. POWER        most of one transformer is silent and most of the cluster dropped together
   3. NETWORK      Telstra lists an outage where most of the cluster is
-  4. NETWORK      (weaker) parts of several transformers are silent, no outage listed yet
+  4. NETWORK      (weaker) several meters across several transformers, no outage listed yet
   5. METER_FAULT  a single meter
   6. METER_FAULT  (weak) anything left over
 
@@ -21,10 +21,13 @@ from .contracts import Cause
 
 @dataclass(frozen=True, slots=True)
 class RuleThresholds:
-    # POWER: at least this share of the touched transformers is silent ...
+    # POWER: at least this share of the worst-hit transformer is silent ...
     power_transformer_share: float = 0.6
-    # ... and at least this share of the cluster dropped in the first burst.
+    # ... and at least this share of the cluster dropped within 30 s of each other.
     power_burst_share: float = 0.5
+    # NETWORK without a listing: needs at least this many meters. Two meters on two
+    # transformers are far more likely two separate small problems.
+    network_min_meters: int = 5
     # NETWORK: at least this share of the cluster is in a suburb with a listed outage.
     network_outage_share: float = 0.5
     # TAMPER: at least this share of a small cluster has a SIM in the wrong place.
@@ -87,10 +90,11 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
             outage_reason,
         )
 
-    # 2. POWER: whole transformer + fast drops.
+    # 2. POWER: whole transformer + fast drops. We look at the worst-hit transformer, not the
+    # average, so one unrelated meter on another transformer does not water the share down.
     if (
         clues.meter_count >= 2
-        and clues.transformer_share >= t.power_transformer_share
+        and clues.max_transformer_share >= t.power_transformer_share
         and clues.burst_share >= t.power_burst_share
     ):
         confidence = t.confidence_power_during_outage if outage_listed else t.confidence_power
@@ -98,9 +102,9 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
             Cause.POWER,
             confidence,
             "power",
-            f"{_pct(clues.transformer_share)} of the meters on {clues.transformer_count} "
-            "transformer(s) are silent",
-            f"{_pct(clues.burst_share)} of them dropped in the first burst",
+            f"{_pct(clues.max_transformer_share)} of the meters on the worst-hit transformer "
+            "are silent",
+            f"{_pct(clues.burst_share)} of the cluster dropped within 30 s of each other",
             outage_reason,
         )
 
@@ -115,7 +119,7 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
         )
 
     # 4. NETWORK, weaker: looks like a network outage but nothing is listed (yet).
-    if clues.crosses_transformers:
+    if clues.crosses_transformers and clues.meter_count >= t.network_min_meters:
         return _result(
             Cause.NETWORK,
             t.confidence_network_unlisted,
@@ -136,12 +140,12 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
             outage_reason,
         )
 
-    # 6. Nothing fits well: a few meters on one transformer, not enough to call it power.
+    # 6. Nothing fits well: a few meters, not enough to call it power or network.
     return _result(
         Cause.METER_FAULT,
         t.confidence_unclear,
         "unclear",
-        f"{clues.meter_count} meters on one transformer, "
-        f"only {_pct(clues.transformer_share)} of it silent",
+        f"{clues.meter_count} meters on {clues.transformer_count} transformer(s), at most "
+        f"{_pct(clues.max_transformer_share)} of one silent",
         outage_reason,
     )
