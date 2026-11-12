@@ -218,3 +218,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node
+node_modules/
+*.tsbuildinfo
+.vite/
+coverage/
+
+# Local env and editor files
+.env.local
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Credentials: never commit these
+*.pem
+*-key.json
+service-account*.json
