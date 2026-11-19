@@ -40,7 +40,8 @@ class Clues:
     suburb_share: float
     # Seconds between the first and the last drop.
     spread_seconds: float
-    # Share of the cluster that dropped within `burst` of the first drop.
+    # Biggest share of the cluster that dropped inside any one `burst`-long stretch (30 s).
+    # Not "the first 30 s": one stray meter dropping earlier would hide a real burst.
     burst_share: float
     # Share of the cluster per reason group; always has every group, and adds up to 1.
     reason_shares: dict[ReasonGroup, float]
@@ -85,7 +86,14 @@ def compute_clues(
     total_in_suburbs = sum(topology.meters_in_suburb(s) for s in cluster.suburbs)
 
     first = cluster.first_silent_at
-    in_burst = sum(1 for m in members if m.silent_at - first <= burst)
+    # Slide a `burst`-long window over the drops (they are in time order) and keep the
+    # fullest one. `start` is the oldest drop still inside the window that ends at `end`.
+    in_burst = 0
+    start = 0
+    for end, member in enumerate(members):
+        while member.silent_at - members[start].silent_at > burst:
+            start += 1
+        in_burst = max(in_burst, end - start + 1)
 
     per_group = Counter(reason_group(m.reason_code) for m in members)
 

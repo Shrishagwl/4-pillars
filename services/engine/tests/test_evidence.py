@@ -19,7 +19,7 @@ def test_power_evidence_covers_every_line_the_card_needs():
     ]  # fmt: skip
     assert lines[0] == "Meters: 20 silent (T5-M01, T5-M02, T5-M03 and 17 more)"
     assert "transformer(s) T5 in Brunswick; 100% of the meters" in lines[1]
-    assert "70% dropped in the first burst" in lines[2]
+    assert "70% dropped within 30 s of each other" in lines[2]
     assert lines[3] == "Reason codes: 70% detached (includes last gasp), 30% detection timeout"
     assert lines[4] == "Outage API: not checked yet"
     assert "POWER at 90%" in lines[5]
