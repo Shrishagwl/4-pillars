@@ -61,6 +61,13 @@ def build_evidence(
     else:
         lines.append(f"Outage API: outage listed, covering {clues.outage_share:.0%} of the cluster")
 
+    if clues.location_mismatch_share is not None:
+        moved = clues.location_mismatch_share
+        lines.append(
+            "Location Verification: "
+            + ("SIM is at the meter's address" if moved == 0 else f"{moved:.0%} of SIMs have moved")
+        )
+
     lines.append(
         f"Verdict: {result.cause} at {result.confidence:.0%} (rule '{result.rule}': "
         + "; ".join(result.reasons)

@@ -2,15 +2,15 @@
 
 The rules are checked in order and the first match wins:
 
-  1. POWER        most of a transformer is silent and most of the cluster dropped in a burst
-  2. NETWORK      Telstra lists an outage where most of the cluster is
-  3. NETWORK      (weaker) parts of several transformers are silent, no outage listed yet
-  4. METER_FAULT  a single meter
-  5. METER_FAULT  (weak) anything left over
+  1. TAMPER       Location Verification says the SIM is not where the meter is
+  2. POWER        most of a transformer is silent and most of the cluster dropped in a burst
+  3. NETWORK      Telstra lists an outage where most of the cluster is
+  4. NETWORK      (weaker) parts of several transformers are silent, no outage listed yet
+  5. METER_FAULT  a single meter
+  6. METER_FAULT  (weak) anything left over
 
 The confidence numbers are our own judgement, not learned from data. Version 2 (naive Bayes)
-replaces them with probabilities learned from twin runs. TAMPER is never picked here because
-it needs Location Verification, which v1 does not look at.
+replaces them with probabilities learned from twin runs.
 """
 
 from dataclasses import dataclass
@@ -27,6 +27,10 @@ class RuleThresholds:
     power_burst_share: float = 0.5
     # NETWORK: at least this share of the cluster is in a suburb with a listed outage.
     network_outage_share: float = 0.5
+    # TAMPER: at least this share of a small cluster has a SIM in the wrong place.
+    tamper_location_share: float = 0.5
+
+    confidence_tamper: float = 0.8
 
     confidence_power: float = 0.9
     confidence_power_during_outage: float = 0.6
@@ -69,7 +73,21 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
         else f"{_pct(clues.outage_share)} of the cluster is in a suburb with a listed outage"
     )
 
-    # 1. POWER: whole transformer + fast drops.
+    # 1. TAMPER: the SIM has moved. Checked first because nothing else explains that.
+    if (
+        clues.location_mismatch_share is not None
+        and clues.location_mismatch_share >= t.tamper_location_share
+    ):
+        return _result(
+            Cause.TAMPER,
+            t.confidence_tamper,
+            "tamper",
+            f"Location Verification: {_pct(clues.location_mismatch_share)} of the cluster's "
+            "SIMs are not at the meter's address",
+            outage_reason,
+        )
+
+    # 2. POWER: whole transformer + fast drops.
     if (
         clues.meter_count >= 2
         and clues.transformer_share >= t.power_transformer_share
@@ -86,7 +104,7 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
             outage_reason,
         )
 
-    # 2. NETWORK: Telstra says so.
+    # 3. NETWORK: Telstra says so.
     if outage_listed:
         return _result(
             Cause.NETWORK,
@@ -96,7 +114,7 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
             f"{clues.meter_count} meters across {clues.transformer_count} transformer(s)",
         )
 
-    # 3. NETWORK, weaker: looks like a network outage but nothing is listed (yet).
+    # 4. NETWORK, weaker: looks like a network outage but nothing is listed (yet).
     if clues.crosses_transformers:
         return _result(
             Cause.NETWORK,
@@ -108,7 +126,7 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
             outage_reason,
         )
 
-    # 4. METER_FAULT: one meter on its own.
+    # 5. METER_FAULT: one meter on its own.
     if clues.meter_count == 1:
         return _result(
             Cause.METER_FAULT,
@@ -118,7 +136,7 @@ def score_v1(clues: Clues, thresholds: RuleThresholds = DEFAULT_THRESHOLDS) -> R
             outage_reason,
         )
 
-    # 5. Nothing fits well: a few meters on one transformer, not enough to call it power.
+    # 6. Nothing fits well: a few meters on one transformer, not enough to call it power.
     return _result(
         Cause.METER_FAULT,
         t.confidence_unclear,
