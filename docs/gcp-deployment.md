@@ -12,6 +12,109 @@ as a generic example; substitute `australia-southeast2` for this deployment.
 Local project settings are in the ignored `infra/gcp/terraform.tfvars`.
 The generated `.terraform.lock.hcl` pins the Google provider to `7.46.2`.
 
+## Application release verified (2026-11-23)
+
+The five services now run application images built from source commit
+`4d1840877c2d7c287c887b2bbeb15ac9d6fb7c9e`. Each image was built with the original
+Dockerfile, pushed to the existing registry, and deployed by immutable digest.
+All original Cloud Run service UIDs are preserved; each ready application revision
+receives 100% traffic. No service was destroyed, recreated or made public.
+
+| Service | Ready revision | Image digest (`sha256:`) |
+|---|---|---|
+| telstra-fake | `four-pillars-telstra-fake-00002-jw4` | `faba05c84896e9f06ee2afcd95778d8f65af40c1e6fb62d0be15e2e4afb77d56` |
+| telstra-gateway | `four-pillars-telstra-gateway-00002-b58` | `33193975f287685b589a026f0941b29ec2571afc0b94e14e0442cb557ce99376` |
+| engine | `four-pillars-engine-00002-hzz` | `63d581c9e9230d05752557609985137784c6bc73a11d02e46ab8b4f098de7539` |
+| ingest-api | `four-pillars-ingest-api-00002-b2r` | `2d08f0d529d6c33f5715b30cabd0e33105c0d41ff65c7ddeac50ccfb188ec0ec` |
+| twin | `four-pillars-twin-00002-62h` | `356f4cf7df58ca91d3c56c192552d780c3848f471a1a7ca00179b7183404fcca` |
+
+Registry image path: `australia-southeast2-docker.pkg.dev/pillars-514405/four-pillars/SERVICE@sha256:DIGEST`.
+The existing service URLs remain valid; use `terraform output service_urls` to
+retrieve them. Runtime limits remain zero minimum/two maximum instances per revision,
+one vCPU, 512 MiB, concurrency 20 and a 60-second request timeout.
+
+Live verification on 2026-11-23 Sydney time:
+
+- All five `/health` responses returned 200 with the exact service and release SHA,
+  using short-lived audience-specific ID tokens as the deployment service account.
+- Unauthenticated requests returned 403 for every service.
+- All five permitted runtime identity edges returned 200: ingest to engine, engine
+  to gateway, gateway to fake, twin to fake, and twin to ingest.
+- The unrelated fake identity was rejected by engine with 403; a token with the
+  wrong audience was rejected by ingest with 401.
+- A synthetic `LOSS_OF_CONNECTIVITY` report was submitted to the private ingestion
+  callback using the twin identity. It returned 202 with `accepted: 1`; reason
+  code 99 was rejected with 400. Request/subscription ID:
+  `deployment-smoke-670a9c12-cb10-4517-9e95-e639dfde86ac`.
+- Cloud Logging contains the accepted report and no error entries in the
+  verification window. Tokens were held only in memory. Temporary conditional
+  `roles/iam.serviceAccountOpenIdTokenCreator` grants, bounded by a 30-minute expiry,
+  were removed after verification. Fresh grants initially required IAM propagation;
+  no broader token-creation role was granted.
+- A final refreshed Terraform plan returned exit code 0 with no changes after the
+  application rollout. All six identities were independently checked after cleanup;
+  no temporary verification bindings remain. A separate full-hour error-log query
+  covers the rollout and verification window.
+
+These requests verify IAM and implemented endpoints. They do not demonstrate a
+business event traveling through all five applications. The implemented capability
+boundary is:
+
+| Application | Implemented in this release | Still unfinished |
+|---|---|---|
+| Ingest API | Health, callback schema validation, acceptance and logging | Persistence and publication/forwarding to engine |
+| Decision Engine | Health; 65 tested pure clustering/scoring/decision tests | HTTP event route and gateway/database integration |
+| Telstra Gateway | Health; private fake URL configured | Telstra API proxy and outbound authenticated client |
+| Fake Telstra | Health | Fake API responses and subscriptions |
+| Digital Twin | Health; private ingest/fake URLs configured | Simulator and event-generation routes |
+| React dashboard | Existing static placeholder builds | Authorized backend data API and incident/map UI |
+
+The operator-generated synthetic event stops at ingest logging. No verdict,
+database persistence, or simulator completion is claimed. Existing fake URLs are
+configured without fabricated Telstra credentials. All four secret containers
+remain empty and are not mounted; real secret integration stays opt-in.
+
+CI/CD changes are in [PR #61](https://github.com/Shrishagwl/4-pillars/pull/61).
+The seven PR checks passed: TypeScript; Python engine, twin, template and evaluation;
+Docker Compose build/start/health; and deployment configuration validation.
+Local deployment tooling has 15 passing tests. All nine required non-secret GitHub
+variables are configured. Five service-scoped CI invocation bindings were added
+with Terraform (53 total resources). Images and traffic remain ignored by Terraform.
+
+The deployment workflow is on the feature branch, not merged into main. GitHub
+production-environment and branch-protection settings require an admin; this
+account's attempts returned 403 and 404 respectively. See the exact
+[owner setup commands](github-deployment-owner-setup.md). Automatic production
+deployment and a GitHub-issued WIF exchange cannot be claimed verified before
+those settings and the workflow merge. No service-account key was created.
+
+State remains local. Both the original 48-resource state and the subsequent
+53-resource state have hash-verified snapshots in `.tools/state-backups/`, with
+access limited to the operator, the local agent account and SYSTEM. Original
+snapshots are preserved. The private/versioned bucket and inactive backend
+configuration are prepared, but explicit bucket/migration approval is pending;
+see [state migration](terraform-state-migration.md).
+
+## External access remains gated
+
+Telstra callbacks currently require a Google IAM identity, so the live external
+Telstra platform cannot call this private endpoint directly. Before public callback
+onboarding, implement a dedicated edge that verifies the vendor's documented
+callback authentication, validates subscription ownership and replay protection,
+and applies rate/payload limits. Its dedicated identity should invoke only ingest
+with a target-audience Google ID token. Confirm the actual supported Telstra
+authentication mechanism before implementing that edge; it does not exist here.
+
+The static dashboard has no authorized data route yet. A suitable next step is an
+application backend that verifies Firebase user identity, enforces per-user access,
+and calls private services with its own scoped runtime identity. Browser CORS alone
+does not grant authorization, and a browser Firebase token is not a substitute for
+Cloud Run service-account IAM authentication. Keep internal services private while
+building this boundary; no unauthenticated callback or dashboard bypass was added.
+See [Cloud Run service authentication](https://docs.cloud.google.com/run/docs/authenticating/service-to-service)
+and [Firebase token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens)
+for the distinct service and user identity boundaries.
+
 ## Provisioning record (2026-11-22)
 
 The user subsequently authorized connecting to GCP and applying Terraform.
