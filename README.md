@@ -32,6 +32,10 @@ flowchart LR
 
 On Google Cloud each service runs on Cloud Run, ingest-api → engine goes over Pub/Sub, secrets live in Secret Manager, Postgres is Cloud SQL, and the dashboard is on Firebase Hosting. Locally, Docker Compose runs all of it offline.
 
+For backend infrastructure, GitHub OIDC deployment, Neon/Cloud SQL setup and rollback, see
+[the GCP deployment guide](docs/gcp-deployment.md). Cloud provisioning requires explicit approval;
+the dashboard remains on Firebase Hosting. Pub/Sub publishing is still tracked in #22.
+
 | Service | Language | Port | What it does |
 |---|---|---|---|
 | [ingest-api](services/ingest-api) | TypeScript, Fastify | 8081 | Receives LoC callbacks, stores events, serves incidents to the dashboard |
