@@ -1,0 +1,2 @@
+bucket = "pillars-514405-terraform-state"
+prefix = "four-pillars/production"

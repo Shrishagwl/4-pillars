@@ -1,0 +1,36 @@
+name: Deployment configuration checks
+
+on:
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact CI-tested commit to validate before deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Deployment unit tests
+        run: python -m unittest discover -s scripts/gcp/tests -v
+      - name: GitHub Actions syntax and shell lint
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo
+          rhysd/actionlint:1.7.7
+          .github/workflows/deploy.yml .github/workflows/deployment-checks.yml
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+      - run: terraform -chdir=infra/gcp fmt -check
+      - run: terraform -chdir=infra/gcp init -backend=false -input=false
+      - run: terraform -chdir=infra/gcp validate

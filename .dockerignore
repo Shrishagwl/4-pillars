@@ -7,3 +7,16 @@
 **/.ruff_cache
 **/*.pdf
 .env
+**/.env
+**/.env.*
+**/gha-creds-*.json
+**/*-key.json
+**/service-account*.json
+**/*.pem
+**/.terraform
+**/*.tfstate*
+**/*.tfplan
+**/*.tfvars
+**/*.tfvars.json
+.tools
+deployment-manifests
