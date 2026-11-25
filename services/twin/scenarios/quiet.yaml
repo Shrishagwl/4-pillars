@@ -1,0 +1,7 @@
+# A normal hour with nothing wrong: every meter keeps sending heartbeats.
+# Useful as a baseline: the engine should raise no incidents at all.
+name: quiet
+description: One hour, no faults. Every meter stays online.
+twin_seed: 42
+duration_min: 60
+faults: []

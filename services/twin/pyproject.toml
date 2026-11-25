@@ -5,7 +5,9 @@ description = "Digital twin of the grid and mobile network: meters, transformers
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.162.2",
+    "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
+    "pyyaml>=6.0.3",
     "uvicorn[standard]>=0.54.0",
 ]
 
