@@ -32,6 +32,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    field_validator,
     model_validator,
 )
 from pydantic_core import ErrorDetails
@@ -82,11 +83,32 @@ ShareRange = Annotated[
 ]
 
 
+# A time in the file is either a fixed minute (120) or a window ([100, 140]). With a window,
+# each run picks a minute inside it with its seed, so runs differ in timing as well as in
+# target (#32). A fixed minute uses no randomness at all.
+MinuteOrWindow = Annotated[int, Field(ge=0)] | MinutesRange
+
+
+def _pick(value: MinuteOrWindow, rng: random.Random) -> int:
+    return value if isinstance(value, int) else rng.randint(*value)
+
+
+def _latest(value: MinuteOrWindow) -> int:
+    return value if isinstance(value, int) else value[1]
+
+
 class _FaultBase(_Strict):
-    at_min: int = Field(ge=0, description="minutes after the run starts")
-    restore_after_min: int | None = Field(
-        default=None, gt=0, description="minutes until it's fixed; leave out for 'never'"
+    at_min: MinuteOrWindow = Field(description="minutes after the run starts")
+    restore_after_min: MinuteOrWindow | None = Field(
+        default=None, description="minutes until it's fixed; leave out for 'never'"
     )
+
+    @field_validator("restore_after_min")
+    @classmethod
+    def _repair_takes_time(cls, value: MinuteOrWindow | None) -> MinuteOrWindow | None:
+        if value is not None and (value if isinstance(value, int) else value[0]) <= 0:
+            raise ValueError("a repair takes at least 1 minute")
+        return value
 
 
 class PowerFault(_FaultBase):
@@ -148,9 +170,9 @@ class Scenario(_Strict):
     @model_validator(mode="after")
     def _faults_start_inside_the_run(self) -> Scenario:
         for i, fault in enumerate(self.faults):
-            if fault.at_min >= self.duration_min:
+            if _latest(fault.at_min) >= self.duration_min:
                 raise ValueError(
-                    f"faults[{i}] starts at minute {fault.at_min}, "
+                    f"faults[{i}] can start at minute {_latest(fault.at_min)}, "
                     f"but the run only lasts {self.duration_min} minutes"
                 )
         return self
@@ -187,27 +209,21 @@ def _describe(err: ErrorDetails) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ScheduledFault:
-    """One fault, pinned down for one run: its target is a real id and its meters are known."""
+    """One fault, pinned down for one run: its target is a real id, its meters are known, and
+    its start and repair are exact minutes."""
 
     fault: PowerFault | NetworkFault | MeterFault | TamperFault
     target: str  # the transformer, suburb or meter id it hits
     meter_ids: tuple[str, ...]  # every meter in the target
-
-    @property
-    def at_min(self) -> int:
-        return self.fault.at_min
-
-    @property
-    def restore_at_min(self) -> int | None:
-        if self.fault.restore_after_min is None:
-            return None
-        return self.fault.at_min + self.fault.restore_after_min
+    at_min: int
+    restore_at_min: int | None  # None: never repaired
 
 
 def schedule(scenario: Scenario, twin: Twin, rng: random.Random) -> list[ScheduledFault]:
     """Resolve every fault's target against the twin and return them in time order.
 
-    "random" targets are picked with `rng`, so the same seed picks the same targets.
+    "random" targets and [low, high] time windows are picked with `rng`, so the same seed picks
+    the same targets and times.
     """
     choices = {
         "transformer": sorted(t.id for t in twin.transformers),
@@ -234,7 +250,11 @@ def schedule(scenario: Scenario, twin: Twin, rng: random.Random) -> list[Schedul
                 f"{scenario.twin_seed} (try one of {choices[field][:3]}... or {RANDOM!r})"
             )
         meter_ids = tuple(m.meter_id for m in members[field](target))
-        planned.append(ScheduledFault(fault, target, meter_ids))
+        at = _pick(fault.at_min, rng)
+        restore = (
+            None if fault.restore_after_min is None else at + _pick(fault.restore_after_min, rng)
+        )
+        planned.append(ScheduledFault(fault, target, meter_ids, at, restore))
 
     # sorted() is stable: two faults at the same minute keep the order they have in the file.
     return sorted(planned, key=lambda p: p.at_min)

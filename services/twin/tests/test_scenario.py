@@ -76,7 +76,7 @@ def test_a_fault_must_start_before_the_run_ends():
     # A whole-scenario check has no single field: the message reads cleanly, with no empty
     # "where" and no "Value error," noise.
     assert str(caught.value) == (
-        "scenario: faults[0] starts at minute 60, but the run only lasts 60 minutes"
+        "scenario: faults[0] can start at minute 60, but the run only lasts 60 minutes"
     )
 
 

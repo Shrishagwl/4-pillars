@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from twin.clock import HEARTBEAT_EVERY_MIN
+from twin.clock import DEFAULT_START, HEARTBEAT_EVERY_MIN
 from twin.faults import LOC_DETECTION_TIMEOUT, LOC_LAST_GASP
 from twin.grid import build_twin
 from twin.run import run_scenario
@@ -27,7 +27,11 @@ def test_answer_key_says_power_on_one_transformer(result):
     [incident] = result.answer_key
     assert incident.cause is Cause.POWER
     assert incident.target.startswith("T-")
-    assert incident.restored_at - incident.started_at == timedelta(minutes=90)
+    assert (
+        timedelta(minutes=60)
+        <= incident.restored_at - incident.started_at
+        <= timedelta(minutes=120)
+    )
 
 
 def test_every_meter_on_the_transformer_reports_and_no_other_meter_does(result):
@@ -114,7 +118,7 @@ def test_reports_convert_to_telstras_json_shape(result):
 
 def test_before_the_fault_every_meter_beats_once_per_cycle(result):
     # The clock steps before it reports, so the first cycle is minutes 1 to 15 (not 0 to 14).
-    start = result.answer_key[0].started_at - timedelta(minutes=120)
+    start = DEFAULT_START
     first_cycle = {
         b.meter_id
         for b in result.heartbeats

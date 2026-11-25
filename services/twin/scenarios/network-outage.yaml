@@ -1,13 +1,13 @@
-# Telstra's mobile network fails across one suburb, and is fixed 90 minutes later.
+# Telstra's mobile network fails across one suburb, and is fixed 1 to 2 hours later.
 # Answer key: NETWORK. The engine should see 60-90% of the suburb go quiet over a few minutes,
 # across many transformers, with no last gasps (all LoC code 7). Telstra lists the outage
 # 10-30 minutes in, and the engine should grow more confident once it does.
 name: network-outage
-description: The mobile network drops across one suburb at 02:00 and is back at 03:30.
+description: The mobile network drops across one suburb around 02:00 and is back 1 to 2 hours later.
 twin_seed: 42
-duration_min: 240
+duration_min: 300   # 5 hours: room for the latest start plus the longest repair
 faults:
   - kind: network
-    at_min: 120
-    suburb: random   # each run's seed picks a different one
-    restore_after_min: 90
+    at_min: [100, 140]      # each run picks a minute in this window
+    suburb: random          # each run's seed picks a different one
+    restore_after_min: [60, 120]

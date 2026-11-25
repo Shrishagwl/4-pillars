@@ -1,0 +1,4 @@
+# Output of `python -m twin run` and `python -m twin.plot`: made fresh from the seeds, so never
+# committed.
+runs/
+*.png
