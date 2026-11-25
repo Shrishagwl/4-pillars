@@ -26,7 +26,14 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
 from pydantic_core import ErrorDetails
 
 from .grid import Twin
@@ -54,6 +61,27 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+def _low_then_high(pair: tuple[float, float]) -> tuple[float, float]:
+    low, high = pair
+    if not 0 <= low <= high:
+        raise ValueError(f"needs [low, high] with 0 <= low <= high, got [{low}, {high}]")
+    return pair
+
+
+def _at_most_one(pair: tuple[float, float]) -> tuple[float, float]:
+    if pair[1] > 1:
+        raise ValueError(f"a share can't be above 1, got {pair[1]}")
+    return pair
+
+
+# A [low, high] pair in the file; each run picks a value in between with its seed.
+SecondsRange = Annotated[tuple[float, float], AfterValidator(_low_then_high)]
+MinutesRange = Annotated[tuple[int, int], AfterValidator(_low_then_high)]
+ShareRange = Annotated[
+    tuple[float, float], AfterValidator(_low_then_high), AfterValidator(_at_most_one)
+]
+
+
 class _FaultBase(_Strict):
     at_min: int = Field(ge=0, description="minutes after the run starts")
     restore_after_min: int | None = Field(
@@ -68,16 +96,21 @@ class PowerFault(_FaultBase):
     transformer: str  # e.g. "T-07", or "random"
     drop_within_s: float = Field(default=10, ge=0)  # every meter is off within this time
     last_gasp_share: float = Field(default=0.7, ge=0, le=1)  # share that send code 6
-    detection_delay_s: tuple[float, float] = (120, 240)  # the rest: code 7 this much later
+    detection_delay_s: SecondsRange = (120, 240)  # the rest: code 7 this much later
 
     cause: ClassVar[Cause] = Cause.POWER
 
 
 class NetworkFault(_FaultBase):
-    """Telstra's network fails in a suburb (#21)."""
+    """Telstra's network fails in a suburb (#21). Meters keep their power but lose signal, so
+    none can send a last gasp: they just go quiet and time out (code 7)."""
 
     kind: Literal["network"]
     suburb: str  # e.g. "Coburg", or "random"
+    drop_share: ShareRange = (0.6, 0.9)  # this share of the suburb's meters lose signal
+    drop_over_s: float = Field(default=180, ge=0)  # one after another, over this long
+    detection_delay_s: SecondsRange = (120, 240)  # the network notices this much later
+    notice_lag_min: MinutesRange = (10, 30)  # Telstra lists the outage this long after it starts
 
     cause: ClassVar[Cause] = Cause.NETWORK
 
