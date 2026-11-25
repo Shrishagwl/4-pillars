@@ -1,0 +1,12 @@
+# One street transformer fails, and a crew fixes it 90 minutes later.
+# Answer key: POWER. The engine should see one transformer's meters go silent within seconds,
+# most of them with a last gasp (LoC code 6), and call a power crew.
+name: power-outage
+description: One transformer fails at 02:00 and power is back at 03:30.
+twin_seed: 42
+duration_min: 240
+faults:
+  - kind: power
+    at_min: 120
+    transformer: random   # each run's seed picks a different one
+    restore_after_min: 90
