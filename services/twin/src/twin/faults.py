@@ -14,6 +14,8 @@ Network outage (#21), a different fingerprint:
     across many transformers;
   - no last gasps, because the meters still have power: every report is code 7;
   - some time later, Telstra lists the outage on its Network Availability API.
+Meter failure (#28): one meter dies without warning (no last gasp), code 7 when the network's
+timer runs out, and nothing else around it goes quiet.
 Default numbers match the engine's own test fixtures (engine/tests/test_pipeline.py); #23
 calibrates them against the research in #3.
 """
@@ -25,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from .clock import TwinClock
-from .scenario import NetworkFault, PowerFault, ScheduledFault
+from .scenario import MeterFault, NetworkFault, PowerFault, ScheduledFault
 
 LOC_LAST_GASP = 6  # detached / deregistered
 LOC_DETECTION_TIMEOUT = 7  # maximum detection time expired
@@ -119,3 +121,23 @@ def network_outage(
 
 def restore_network(planned: ScheduledFault, clock: TwinClock) -> None:
     clock.set_connected(planned.meter_ids, True)
+
+
+def meter_failure(planned: ScheduledFault, clock: TwinClock, rng: random.Random) -> list[LocReport]:
+    fault = planned.fault
+    assert isinstance(fault, MeterFault)
+    [meter_id] = planned.meter_ids
+    if not clock.state(meter_id).online:
+        return []
+    died_at = clock.now + timedelta(seconds=rng.uniform(0, 60))
+    noticed_at = died_at + timedelta(seconds=rng.uniform(*fault.detection_delay_s))
+    clock.set_healthy([meter_id], False)
+    return [LocReport(_msisdn(clock, meter_id), LOC_DETECTION_TIMEOUT, noticed_at)]
+
+
+def restore_meter(planned: ScheduledFault, clock: TwinClock) -> None:
+    clock.set_healthy(planned.meter_ids, True)
+
+
+def _msisdn(clock: TwinClock, meter_id: str) -> str:
+    return next(m.msisdn for m in clock.twin.meters if m.meter_id == meter_id)

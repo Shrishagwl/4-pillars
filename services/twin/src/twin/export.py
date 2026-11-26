@@ -7,6 +7,7 @@
         outages.jsonl                 what Network Availability lists, and from when
         heartbeats.jsonl              (only with --heartbeats: large)
         answer_key.json               the truth: cause, target, times, silenced meters
+        background.json               the truth about normal-day dropouts (not incidents)
         run.json                      what produced this folder
 
 The answer key never goes in the same file as the events, so nothing that reads the event
@@ -101,6 +102,19 @@ def write_run(result: RunResult, out: Path, heartbeats: bool = False) -> Path:
         ],
     )
     _write_json(
+        folder / "background.json",
+        [
+            {
+                "meterId": d.meter_id,
+                "msisdn": d.msisdn,
+                "droppedAt": _iso(d.dropped_at),
+                "backAt": _iso(d.back_at),
+                "reported": d.reported,
+            }
+            for d in result.background
+        ],
+    )
+    _write_json(
         folder / "run.json",
         {
             "scenario": result.scenario,
@@ -110,6 +124,7 @@ def write_run(result: RunResult, out: Path, heartbeats: bool = False) -> Path:
             "outages": len(result.outages),
             "heartbeats": len(result.heartbeats),
             "incidents": len(result.answer_key),
+            "backgroundDropouts": len(result.background),
         },
     )
     return folder

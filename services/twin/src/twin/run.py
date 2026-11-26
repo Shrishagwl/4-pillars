@@ -6,6 +6,7 @@
     result.loc_reports   # what the engine gets to see
     result.outages       # what Telstra's Network Availability API lists, and from when
     result.answer_key    # the truth, kept separate so the engine can never peek at it
+    result.background    # normal-day dropouts: also truth, and not incidents
 
 The run's seed decides everything random about the run: which target "random" picks, when each
 meter drops, which ones send a last gasp. The twin's layout comes from the scenario's own
@@ -21,27 +22,32 @@ from datetime import datetime, timedelta
 
 from .clock import DEFAULT_START, Heartbeat, TwinClock
 from .faults import (
+    LOC_DETECTION_TIMEOUT,
     LocReport,
     OutageNotice,
+    meter_failure,
     network_outage,
     power_outage,
+    restore_meter,
     restore_network,
     restore_power,
 )
 from .grid import build_twin
-from .scenario import Cause, NetworkFault, Scenario, ScheduledFault, schedule
+from .scenario import Cause, NetworkFault, Noise, Scenario, ScheduledFault, schedule
 
 # What each fault kind does when it starts, and when it is fixed. The other kinds are added by
 # their own issues; until then a scenario that uses them fails with a clear message.
 START: dict[str, Callable[[ScheduledFault, TwinClock, random.Random], list[LocReport]]] = {
     "power": power_outage,
     "network": network_outage,
+    "meter": meter_failure,
 }
 RESTORE: dict[str, Callable[[ScheduledFault, TwinClock], None]] = {
     "power": restore_power,
     "network": restore_network,
+    "meter": restore_meter,
 }
-COMING_IN = {"meter": "#28", "tamper": "#31"}
+COMING_IN = {"tamper": "#31"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +65,18 @@ class Incident:
 
 
 @dataclass(frozen=True, slots=True)
+class Dropout:
+    """One background dropout (#28): a meter loses signal and comes back by itself. Not an
+    incident, so it is not in the answer key. A good engine sends nobody for these."""
+
+    meter_id: str
+    msisdn: str
+    dropped_at: datetime
+    back_at: datetime | None  # None if it was still out when the run ended
+    reported: bool  # it lasted past the detection timer, so Telstra sent a code 7
+
+
+@dataclass(frozen=True, slots=True)
 class RunResult:
     scenario: str
     seed: int
@@ -67,6 +85,7 @@ class RunResult:
     outages: tuple[OutageNotice, ...]  # only those listed before the run ended
     heartbeats: tuple[Heartbeat, ...]
     answer_key: tuple[Incident, ...]
+    background: tuple[Dropout, ...] = ()
 
 
 def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START) -> RunResult:
@@ -75,6 +94,9 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
     # A label plus the seed, so this generator never shares numbers with the twin's or the
     # clock's (the same idea as the clock's heartbeat slots).
     rng = random.Random(f"run:{scenario.name}:{seed}")
+    # Background noise gets its own generator, so switching noise on or off never changes
+    # which transformer a fault hits or when.
+    noise_rng = random.Random(f"noise:{scenario.name}:{seed}")
     planned = schedule(scenario, twin, rng)
 
     for p in planned:
@@ -84,6 +106,7 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
             )
 
     meter_of = {m.msisdn: m.meter_id for m in twin.meters}
+    msisdn_of = {m.meter_id: m.msisdn for m in twin.meters}
     postcode_of = {s.name: s.postcode for s in twin.suburbs}
     end = start + timedelta(minutes=scenario.duration_min)
 
@@ -97,9 +120,13 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
     reports: list[LocReport] = []
     outages: list[OutageNotice] = []
     heartbeats: list[Heartbeat] = []
+    background: list[Dropout] = []
+    reconnect: dict[int, list[str]] = {}  # minute -> meters whose dropout ends then
     silenced: dict[int, tuple[str, ...]] = {}
     for minute in range(scenario.duration_min):
-        # Restores first, then new faults, so a fault and a repair on the same minute behave.
+        # Repairs and reconnections first, then new faults, so a fault and a repair on the
+        # same minute behave.
+        clock.set_connected(reconnect.pop(minute, []), True)
         for p in planned:
             if p.restore_at_min == minute:
                 RESTORE[p.fault.kind](p, clock)
@@ -117,6 +144,14 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
                             p.target, postcode_of[p.target], clock.now, listed_at, restored_at(p)
                         )
                     )
+        if scenario.noise is not None:
+            dropout = _maybe_drop_out(scenario.noise, clock, noise_rng, minute, end)
+            if dropout is not None:
+                meter_id, back_minute, report, record = dropout
+                reconnect.setdefault(back_minute, []).append(meter_id)
+                background.append(record(msisdn_of[meter_id]))
+                if report is not None:
+                    reports.append(LocReport(msisdn_of[meter_id], LOC_DETECTION_TIMEOUT, report))
         heartbeats += clock.step()
 
     answer_key = tuple(
@@ -138,4 +173,34 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
         outages=tuple(sorted(outages, key=lambda o: o.listed_at)),
         heartbeats=tuple(heartbeats),
         answer_key=answer_key,
+        background=tuple(background),
     )
+
+
+def _maybe_drop_out(
+    noise: Noise, clock: TwinClock, rng: random.Random, minute: int, end: datetime
+) -> tuple[str, int, datetime | None, Callable[[str], Dropout]] | None:
+    """At most one dropout per minute, with chance dropouts_per_hour / 60. Returns the meter,
+    the minute it comes back, when Telstra reports it (None if it is back before the network's
+    timer runs out), and a function that builds the Dropout record once we know its msisdn."""
+    if rng.random() >= noise.dropouts_per_hour / 60:
+        return None
+    online = [m.meter_id for m in clock.twin.meters if clock.state(m.meter_id).online]
+    if not online:
+        return None
+    meter_id = rng.choice(online)
+    lasts_min = rng.randint(*noise.back_after_min)
+    dropped_at = clock.now + timedelta(seconds=rng.uniform(0, 60))
+    timer = timedelta(seconds=rng.uniform(*noise.detection_delay_s))
+    back_minute = minute + lasts_min
+    back_at = clock.now + timedelta(minutes=lasts_min)
+    # Telstra only reports it if the meter is still gone when the detection timer runs out.
+    report = dropped_at + timer if back_at - dropped_at > timer else None
+    clock.set_connected([meter_id], False)
+
+    def record(msisdn: str) -> Dropout:
+        return Dropout(
+            meter_id, msisdn, dropped_at, back_at if back_at < end else None, report is not None
+        )
+
+    return meter_id, back_minute, report, record

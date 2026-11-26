@@ -138,10 +138,13 @@ class NetworkFault(_FaultBase):
 
 
 class MeterFault(_FaultBase):
-    """One meter breaks (#28)."""
+    """One meter breaks on its own (#28), for example a dead modem. It dies without warning, so
+    there is no last gasp: the network notices when its detection timer runs out (code 7).
+    restore_after_min is when a technician has replaced it."""
 
     kind: Literal["meter"]
     meter: str  # e.g. "M-0412", or "random"
+    detection_delay_s: SecondsRange = (120, 240)
 
     cause: ClassVar[Cause] = Cause.METER_FAULT
 
@@ -155,6 +158,24 @@ class TamperFault(_FaultBase):
     cause: ClassVar[Cause] = Cause.TAMPER
 
 
+class Noise(_Strict):
+    """Background dropouts on a normal day (#28). Now and then a meter loses signal for a few
+    minutes and comes back by itself. These are not incidents: nobody needs to go anywhere. If a
+    dropout outlasts the network's detection timer, Telstra still sends a code 7 for it, which
+    is exactly what can fool an engine into a needless dispatch."""
+
+    dropouts_per_hour: float = Field(default=2.0, ge=0, le=60)
+    back_after_min: MinutesRange = (1, 15)
+    detection_delay_s: SecondsRange = (120, 240)
+
+    @field_validator("back_after_min")
+    @classmethod
+    def _at_least_a_minute(cls, value: tuple[int, int]) -> tuple[int, int]:
+        if value[0] < 1:
+            raise ValueError("a dropout lasts at least 1 minute")
+        return value
+
+
 # The `kind` field decides which of the four shapes a fault must have. Pydantic calls this a
 # discriminated union: it reads `kind` first, then checks the rest against the matching class.
 Fault = Annotated[PowerFault | NetworkFault | MeterFault | TamperFault, Field(discriminator="kind")]
@@ -166,6 +187,7 @@ class Scenario(_Strict):
     twin_seed: int = 42  # which twin to build; the same map for every run of this scenario
     duration_min: int = Field(gt=0)
     faults: list[Fault] = []
+    noise: Noise | None = None  # background dropouts; leave out for a perfectly clean network
 
     @model_validator(mode="after")
     def _faults_start_inside_the_run(self) -> Scenario:

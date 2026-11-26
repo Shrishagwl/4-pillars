@@ -75,6 +75,7 @@ def test_events_and_answer_key_go_in_separate_files(tmp_path, network_run):
         "loc_reports.jsonl",
         "outages.jsonl",
         "answer_key.json",
+        "background.json",
         "run.json",
     }
     events = (folder / "loc_reports.jsonl").read_text(encoding="utf-8")

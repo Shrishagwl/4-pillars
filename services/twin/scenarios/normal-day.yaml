@@ -1,0 +1,12 @@
+# A normal day: nothing breaks, but now and then a meter loses signal for a few minutes and
+# comes back by itself. Answer key: empty (no incidents). The dropouts are listed separately
+# as background. Some last long enough for Telstra to send a code 7, so this scenario measures
+# how often the engine would send someone out for nothing.
+name: normal-day
+description: Six quiet hours with a few short signal dropouts and no real faults.
+twin_seed: 42
+duration_min: 360
+faults: []
+noise:
+  dropouts_per_hour: 4
+  back_after_min: [1, 15]

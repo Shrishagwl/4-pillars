@@ -100,12 +100,12 @@ def test_a_meter_already_offline_sends_no_second_report():
 def test_unbuilt_fault_kinds_fail_clearly():
     s = parse_scenario(
         {
-            "name": "broken-meter",
+            "name": "tampered",
             "duration_min": 30,
-            "faults": [{"kind": "meter", "at_min": 5, "meter": "M-0001"}],
+            "faults": [{"kind": "tamper", "at_min": 5, "meter": "M-0001"}],
         }
     )
-    with pytest.raises(NotImplementedError, match="#28"):
+    with pytest.raises(NotImplementedError, match="#31"):
         run_scenario(s, seed=0)
 
 
