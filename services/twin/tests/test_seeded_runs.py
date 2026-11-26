@@ -74,6 +74,7 @@ def test_events_and_answer_key_go_in_separate_files(tmp_path, network_run):
     assert {p.name for p in folder.iterdir()} == {
         "loc_reports.jsonl",
         "outages.jsonl",
+        "sim_locations.jsonl",
         "answer_key.json",
         "background.json",
         "run.json",

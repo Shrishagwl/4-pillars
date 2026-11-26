@@ -16,18 +16,22 @@ Network outage (#21), a different fingerprint:
   - some time later, Telstra lists the outage on its Network Availability API.
 Meter failure (#28): one meter dies without warning (no last gasp), code 7 when the network's
 timer runs out, and nothing else around it goes quiet.
+Tamper (#31): one meter is unplugged (often a last gasp, like a tiny power cut), then its SIM
+comes back online kilometres away, which Location Verification can catch.
 Default numbers match the engine's own test fixtures (engine/tests/test_pipeline.py); #23
 calibrates them against the research in #3.
 """
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from .clock import TwinClock
-from .scenario import MeterFault, NetworkFault, PowerFault, ScheduledFault
+from .grid import M_PER_DEG_LAT, M_PER_DEG_LON
+from .scenario import MeterFault, NetworkFault, PowerFault, ScheduledFault, TamperFault
 
 LOC_LAST_GASP = 6  # detached / deregistered
 LOC_DETECTION_TIMEOUT = 7  # maximum detection time expired
@@ -137,6 +141,50 @@ def meter_failure(planned: ScheduledFault, clock: TwinClock, rng: random.Random)
 
 def restore_meter(planned: ScheduledFault, clock: TwinClock) -> None:
     clock.set_healthy(planned.meter_ids, True)
+
+
+@dataclass(frozen=True, slots=True)
+class Relocation:
+    """Where a tampered meter's SIM really is from `moved_at` on (#31). This is what Telstra's
+    Location Verification would see: ask about the meter's own address and it answers FALSE."""
+
+    meter_id: str
+    msisdn: str
+    lat: float
+    lon: float
+    moved_at: datetime
+    distance_m: float  # from the meter's registered address
+
+
+def tamper_removal(
+    planned: ScheduledFault, clock: TwinClock, rng: random.Random
+) -> list[LocReport]:
+    fault = planned.fault
+    assert isinstance(fault, TamperFault)
+    [meter_id] = planned.meter_ids
+    if not clock.state(meter_id).online:
+        return []
+    msisdn = _msisdn(clock, meter_id)
+    unplugged_at = clock.now + timedelta(seconds=rng.uniform(0, 60))
+    clock.set_powered([meter_id], False)
+    if rng.random() < fault.last_gasp_share:
+        return [LocReport(msisdn, LOC_LAST_GASP, unplugged_at)]
+    noticed_at = unplugged_at + timedelta(seconds=rng.uniform(*fault.detection_delay_s))
+    return [LocReport(msisdn, LOC_DETECTION_TIMEOUT, noticed_at)]
+
+
+def tamper_reappear(planned: ScheduledFault, clock: TwinClock, rng: random.Random) -> Relocation:
+    """The SIM comes back online somewhere else: heartbeats resume, from the wrong place."""
+    fault = planned.fault
+    assert isinstance(fault, TamperFault)
+    [meter_id] = planned.meter_ids
+    home = next(m for m in clock.twin.meters if m.meter_id == meter_id)
+    distance = rng.uniform(*fault.moved_m)
+    bearing = rng.uniform(0, 2 * math.pi)  # any direction
+    lat = home.lat + distance * math.cos(bearing) / M_PER_DEG_LAT
+    lon = home.lon + distance * math.sin(bearing) / M_PER_DEG_LON
+    clock.set_powered([meter_id], True)
+    return Relocation(meter_id, home.msisdn, lat, lon, clock.now, distance)
 
 
 def _msisdn(clock: TwinClock, meter_id: str) -> str:

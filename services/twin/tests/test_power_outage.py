@@ -97,18 +97,6 @@ def test_a_meter_already_offline_sends_no_second_report():
     assert len(result.loc_reports) == len(first.meter_ids)
 
 
-def test_unbuilt_fault_kinds_fail_clearly():
-    s = parse_scenario(
-        {
-            "name": "tampered",
-            "duration_min": 30,
-            "faults": [{"kind": "tamper", "at_min": 5, "meter": "M-0001"}],
-        }
-    )
-    with pytest.raises(NotImplementedError, match="#31"):
-        run_scenario(s, seed=0)
-
-
 def test_reports_convert_to_telstras_json_shape(result):
     report = result.loc_reports[0].to_telstra()
     assert report["monitoringType"] == "LOSS_OF_CONNECTIVITY"

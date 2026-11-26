@@ -5,6 +5,7 @@
       power-outage/seed-003/
         loc_reports.jsonl             the event stream, exactly as Telstra would send it
         outages.jsonl                 what Network Availability lists, and from when
+        sim_locations.jsonl           where tampered SIMs turned up (for Location Verification)
         heartbeats.jsonl              (only with --heartbeats: large)
         answer_key.json               the truth: cause, target, times, silenced meters
         background.json               the truth about normal-day dropouts (not incidents)
@@ -78,6 +79,18 @@ def write_run(result: RunResult, out: Path, heartbeats: bool = False) -> Path:
             for o in result.outages
         ),
     )
+    _write_jsonl(
+        folder / "sim_locations.jsonl",
+        (
+            {
+                "msisdn": r.msisdn,
+                "latitude": r.lat,
+                "longitude": r.lon,
+                "since": _iso(r.moved_at),
+            }
+            for r in result.relocations
+        ),
+    )
     hb_path = folder / "heartbeats.jsonl"
     if heartbeats:
         _write_jsonl(
@@ -125,6 +138,7 @@ def write_run(result: RunResult, out: Path, heartbeats: bool = False) -> Path:
             "heartbeats": len(result.heartbeats),
             "incidents": len(result.answer_key),
             "backgroundDropouts": len(result.background),
+            "relocations": len(result.relocations),
         },
     )
     return folder

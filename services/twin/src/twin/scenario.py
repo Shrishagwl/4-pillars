@@ -150,12 +150,27 @@ class MeterFault(_FaultBase):
 
 
 class TamperFault(_FaultBase):
-    """A meter is tampered with and moved (#31)."""
+    """Someone pulls a meter off the wall and takes it somewhere else (#31). Unplugging it cuts
+    its power (often a last gasp), and later its SIM comes back online away from the meter's
+    address, so Telstra's Location Verification answers FALSE for that address."""
 
     kind: Literal["tamper"]
-    meter: str
+    meter: str  # e.g. "M-0412", or "random"
+    last_gasp_share: float = Field(default=0.7, ge=0, le=1)
+    detection_delay_s: SecondsRange = (120, 240)
+    reappear_after_min: MinutesRange = (5, 30)  # back online elsewhere this much later
+    moved_m: SecondsRange = (2_000, 10_000)  # how far away it turns up (a [low, high] in metres)
 
     cause: ClassVar[Cause] = Cause.TAMPER
+
+    @model_validator(mode="after")
+    def _not_repaired(self) -> TamperFault:
+        if self.restore_after_min is not None:
+            raise ValueError(
+                "a tampered meter isn't repaired in place; use reappear_after_min for when its "
+                "SIM shows up somewhere else"
+            )
+        return self
 
 
 class Noise(_Strict):

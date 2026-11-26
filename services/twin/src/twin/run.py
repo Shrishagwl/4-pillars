@@ -7,6 +7,7 @@
     result.outages       # what Telstra's Network Availability API lists, and from when
     result.answer_key    # the truth, kept separate so the engine can never peek at it
     result.background    # normal-day dropouts: also truth, and not incidents
+    result.relocations   # where tampered SIMs turned up (what Location Verification would see)
 
 The run's seed decides everything random about the run: which target "random" picks, when each
 meter drops, which ones send a last gasp. The twin's layout comes from the scenario's own
@@ -25,29 +26,32 @@ from .faults import (
     LOC_DETECTION_TIMEOUT,
     LocReport,
     OutageNotice,
+    Relocation,
     meter_failure,
     network_outage,
     power_outage,
     restore_meter,
     restore_network,
     restore_power,
+    tamper_reappear,
+    tamper_removal,
 )
 from .grid import build_twin
-from .scenario import Cause, NetworkFault, Noise, Scenario, ScheduledFault, schedule
+from .scenario import Cause, NetworkFault, Noise, Scenario, ScheduledFault, TamperFault, schedule
 
-# What each fault kind does when it starts, and when it is fixed. The other kinds are added by
-# their own issues; until then a scenario that uses them fails with a clear message.
+# What each fault kind does when it starts, and when it is fixed. A tampered meter is never
+# fixed in place; instead its SIM reappears somewhere else (see run_scenario).
 START: dict[str, Callable[[ScheduledFault, TwinClock, random.Random], list[LocReport]]] = {
     "power": power_outage,
     "network": network_outage,
     "meter": meter_failure,
+    "tamper": tamper_removal,
 }
 RESTORE: dict[str, Callable[[ScheduledFault, TwinClock], None]] = {
     "power": restore_power,
     "network": restore_network,
     "meter": restore_meter,
 }
-COMING_IN = {"tamper": "#31"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +90,12 @@ class RunResult:
     heartbeats: tuple[Heartbeat, ...]
     answer_key: tuple[Incident, ...]
     background: tuple[Dropout, ...] = ()
+    relocations: tuple[Relocation, ...] = ()
+
+    def moved_msisdns(self, at: datetime) -> set[str]:
+        """SIMs that are online away from their meter's address at time `at`: the ones
+        Location Verification would answer FALSE for. This is the engine's moved_msisdns."""
+        return {r.msisdn for r in self.relocations if r.moved_at <= at}
 
 
 def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START) -> RunResult:
@@ -98,12 +108,6 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
     # which transformer a fault hits or when.
     noise_rng = random.Random(f"noise:{scenario.name}:{seed}")
     planned = schedule(scenario, twin, rng)
-
-    for p in planned:
-        if p.fault.kind not in START:
-            raise NotImplementedError(
-                f"{scenario.name}: '{p.fault.kind}' faults arrive in {COMING_IN[p.fault.kind]}"
-            )
 
     meter_of = {m.msisdn: m.meter_id for m in twin.meters}
     msisdn_of = {m.meter_id: m.msisdn for m in twin.meters}
@@ -121,12 +125,16 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
     outages: list[OutageNotice] = []
     heartbeats: list[Heartbeat] = []
     background: list[Dropout] = []
+    relocations: list[Relocation] = []
+    reappear: dict[int, list[ScheduledFault]] = {}  # minute -> tampered meters coming back
     reconnect: dict[int, list[str]] = {}  # minute -> meters whose dropout ends then
     silenced: dict[int, tuple[str, ...]] = {}
     for minute in range(scenario.duration_min):
         # Repairs and reconnections first, then new faults, so a fault and a repair on the
         # same minute behave.
         clock.set_connected(reconnect.pop(minute, []), True)
+        for p in reappear.pop(minute, []):
+            relocations.append(tamper_reappear(p, clock, rng))
         for p in planned:
             if p.restore_at_min == minute:
                 RESTORE[p.fault.kind](p, clock)
@@ -136,6 +144,9 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
             new = START[p.fault.kind](p, clock, rng)
             reports += new
             silenced[i] = tuple(sorted(meter_of[r.msisdn] for r in new))
+            if isinstance(p.fault, TamperFault) and new:
+                back = minute + rng.randint(*p.fault.reappear_after_min)
+                reappear.setdefault(back, []).append(p)
             if isinstance(p.fault, NetworkFault):
                 listed_at = clock.now + timedelta(minutes=rng.randint(*p.fault.notice_lag_min))
                 if listed_at < end:
@@ -174,6 +185,7 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
         heartbeats=tuple(heartbeats),
         answer_key=answer_key,
         background=tuple(background),
+        relocations=tuple(relocations),
     )
 
 

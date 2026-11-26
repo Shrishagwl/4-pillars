@@ -1,0 +1,13 @@
+# Someone pulls a meter off the wall and takes it elsewhere. It goes silent (often with a last
+# gasp, because unplugging it cuts its power), then its SIM comes back online 2 to 10 km away.
+# Answer key: TAMPER. Location Verification on the meter's own address answers FALSE once the
+# SIM has moved, which is the clue the engine needs to tell this apart from a meter fault.
+name: tamper
+description: One meter is removed between 01:00 and 02:00 and its SIM turns up kilometres away.
+twin_seed: 42
+duration_min: 240
+faults:
+  - kind: tamper
+    at_min: [60, 120]       # each run picks a minute in this window
+    meter: random           # each run's seed picks a different one
+    reappear_after_min: [5, 30]  # some inside the engine's 15-minute window, some after it
