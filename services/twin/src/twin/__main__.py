@@ -9,6 +9,7 @@ Seeds go 0, 1, 2, ... so "--seeds 10" always means the same ten runs, on any mac
 from __future__ import annotations
 
 import argparse
+import glob
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -30,10 +31,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _expand(patterns: Sequence[Path]) -> list[Path]:
+    """Expand patterns like scenarios/*.yaml ourselves. Bash does it before Python starts, but
+    PowerShell and cmd pass the * through unchanged, so without this the command would fail on
+    Windows. A pattern that matches nothing is kept, so the error names it."""
+    paths: list[Path] = []
+    for pattern in patterns:
+        text = str(pattern)
+        matches = sorted(glob.glob(text)) if any(c in text for c in "*?[") else []
+        paths += [Path(m) for m in matches] or [pattern]
+    return paths
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        scenarios = [load_scenario(p) for p in args.scenarios]
+        scenarios = [load_scenario(p) for p in _expand(args.scenarios)]
     except ScenarioError as e:
         print(f"error: {e}")
         return 2

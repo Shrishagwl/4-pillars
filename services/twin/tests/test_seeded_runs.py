@@ -134,3 +134,10 @@ def test_command_line_reports_a_bad_scenario_file(tmp_path, capsys):
     bad.write_text("name: bad\nduration_min: -5\n", encoding="utf-8")
     assert main(["run", str(bad), "--out", str(tmp_path / "runs")]) == 2
     assert "bad.yaml" in capsys.readouterr().out
+
+
+def test_command_line_expands_a_star_pattern_itself(tmp_path):
+    # PowerShell doesn't expand *.yaml before Python sees it, so the command has to.
+    assert main(["run", str(SCENARIOS / "*.yaml"), "--seeds", "1", "--out", str(tmp_path)]) == 0
+    expected = {p.stem for p in SCENARIOS.glob("*.yaml")}
+    assert {d.name for d in tmp_path.iterdir() if d.is_dir()} == expected
