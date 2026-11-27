@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     gateway_url: str = "http://localhost:8082"
     # Postgres, engine schema (incidents and verdicts). Empty = run without a database.
     database_url: str = ""
+    # Optional Gemini summaries (see summary.py). Off = the built-in template is used.
+    llm_summary: bool = False
+    gcp_project: str = ""
+    gcp_location: str = "australia-southeast1"
+    gemini_model: str = "gemini-2.5-flash"
 
 
 @lru_cache

@@ -9,6 +9,10 @@ dependencies = [
     "uvicorn[standard]>=0.54.0",
 ]
 
+[project.optional-dependencies]
+# Only needed for the optional Gemini incident summaries: uv sync --extra llm
+llm = ["google-genai>=1.0"]
+
 [dependency-groups]
 dev = [
     "httpx2>=2.16.0",
