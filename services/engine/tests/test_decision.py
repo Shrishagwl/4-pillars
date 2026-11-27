@@ -5,7 +5,17 @@ import pytest
 from engine.contracts import Action, Cause
 from engine.decision import RIGHT_ACTION, Costs, choose_action, expected_cost, load_costs
 
-COSTS = Costs()
+# Fixed, round numbers so the arithmetic in these tests is easy to check by hand. The real
+# defaults (docs/decision-costs.md) live in decision.py and can change without breaking these.
+COSTS = Costs(
+    truck_roll=300,
+    power_crew=800,
+    late_power_per_meter=10,
+    meter_left_broken=100,
+    missed_tamper=500,
+    manual_review=8,
+    review_delay_share=0.1,
+)
 
 
 def sure_of(cause: Cause, confidence: float) -> dict[Cause, float]:
@@ -45,34 +55,41 @@ def test_expected_cost_is_the_weighted_average():
 
 @pytest.mark.parametrize("cause", list(Cause))
 def test_confident_verdict_gets_its_matching_action(cause):
-    decision = choose_action(sure_of(cause, 0.9), meters=40)
+    decision = choose_action(sure_of(cause, 0.9), meters=40, costs=COSTS)
     assert decision.action is RIGHT_ACTION[cause]
     assert set(decision.expected_costs) == set(RIGHT_ACTION.values())
 
 
 def test_below_sixty_percent_goes_to_manual_review():
-    decision = choose_action(sure_of(Cause.NETWORK, 0.55), meters=40)
+    decision = choose_action(sure_of(Cause.NETWORK, 0.55), meters=40, costs=COSTS)
     assert decision.action is Action.MANUAL_REVIEW
     assert "55%" in decision.reason
 
 
 def test_exactly_sixty_percent_is_enough_to_act():
-    assert choose_action(sure_of(Cause.POWER, 0.6), meters=40).action is not Action.MANUAL_REVIEW
+    decision = choose_action(sure_of(Cause.POWER, 0.6), meters=40, costs=COSTS)
+    assert decision.action is not Action.MANUAL_REVIEW
 
 
 def test_big_cluster_can_justify_a_crew_even_when_power_is_not_the_top_cause():
     # 70% network, but 30% chance that 2,000 customers are without power.
     probabilities = {Cause.NETWORK: 0.7, Cause.POWER: 0.3, Cause.METER_FAULT: 0, Cause.TAMPER: 0}
-    assert choose_action(probabilities, meters=2000).action is Action.DISPATCH_POWER_CREW
-    assert choose_action(probabilities, meters=20).action is Action.WAIT_FOR_NETWORK
+    assert choose_action(probabilities, 2000, COSTS).action is Action.DISPATCH_POWER_CREW
+    assert choose_action(probabilities, 20, COSTS).action is Action.WAIT_FOR_NETWORK
 
 
 def test_costs_load_from_json(tmp_path):
     path = tmp_path / "costs.json"
     path.write_text(json.dumps({"truck_roll": 350}), encoding="utf-8")
     assert load_costs(path).truck_roll == 350
-    assert load_costs(path).power_crew == 800  # not in the file, keeps the default
+    assert load_costs(path).power_crew == Costs().power_crew  # not in the file: keeps the default
 
     path.write_text(json.dumps({"truck_rol": 350}), encoding="utf-8")
     with pytest.raises(ValueError, match="unknown cost names"):
         load_costs(path)
+
+
+def test_real_costs_still_pick_the_matching_action_when_confident():
+    # With the researched defaults, a 90% sure verdict on a 40-meter cluster still acts on it.
+    for cause, action in RIGHT_ACTION.items():
+        assert choose_action(sure_of(cause, 0.9), meters=40).action is action

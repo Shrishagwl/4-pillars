@@ -10,7 +10,8 @@ away. The right action for the true cause therefore costs 0.
 If we are less than 60% sure of the cause we do not act at all and send the incident to a
 person (MANUAL_REVIEW).
 
-The dollar values below are placeholders until issue #8 delivers researched ones.
+The dollar values below come from task #8 (Set the cost of each decision). Sources and the
+working for each number are in docs/decision-costs.md. Change both together.
 """
 
 import json
@@ -35,14 +36,21 @@ DEFAULT_MIN_CONFIDENCE = 0.6
 
 @dataclass(frozen=True, slots=True)
 class Costs:
-    """Dollars. Every value is a guess until #8."""
+    """Dollars, ex GST, 2026. Sources and working: docs/decision-costs.md (#8)."""
 
-    truck_roll: float = 300.0  # one technician visit
-    power_crew: float = 800.0  # one power crew call-out
-    late_power_per_meter: float = 10.0  # a power cut we did not act on, per customer
-    meter_left_broken: float = 100.0  # a faulty meter we did not send anyone to
-    missed_tamper: float = 500.0  # tampering we did not investigate
-    manual_review: float = 8.0  # ten minutes of an operator
+    # One technician visit: Jemena's regulated "wasted site attendance" fee, business hours.
+    truck_roll: float = 650.0
+    # One power crew call-out: 2 field workers for 2 hours at Jemena's average BH/AH rate.
+    power_crew: float = 1_200.0
+    # A power cut we did not act on, per customer: AER value of customer reliability for
+    # suburban Melbourne ($55.10/kWh) x 0.5 kW average household load x 1 hour extra delay.
+    late_power_per_meter: float = 28.0
+    # A faulty meter we did not send anyone to: two manual special reads until it is fixed.
+    meter_left_broken: float = 125.0
+    # Tampering we did not investigate: about six months of an average home's stolen power.
+    missed_tamper: float = 600.0
+    # Ten minutes of an operator at Jemena's administrative officer rate.
+    manual_review: float = 20.0
     # A review delays the real action. We charge this share of the cost of doing nothing.
     review_delay_share: float = 0.1
 

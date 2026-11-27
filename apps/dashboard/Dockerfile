@@ -6,6 +6,7 @@ COPY . .
 ARG VITE_INGEST_URL=http://localhost:8081
 ENV VITE_INGEST_URL=${VITE_INGEST_URL}
 RUN npm ci --workspace apps/dashboard --include-workspace-root --ignore-scripts \
+ && npm run build -w @4p/contracts \
  && npm run build -w @4p/dashboard
 
 FROM nginx:1.29-alpine

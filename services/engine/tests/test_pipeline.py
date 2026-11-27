@@ -85,7 +85,11 @@ def test_a_lone_meter_fault_next_to_a_power_outage_stays_separate():
     assert set(by_cause) == {Cause.POWER, Cause.METER_FAULT}
     assert by_cause[Cause.METER_FAULT].cluster.size == 1
     assert by_cause[Cause.POWER].cluster.size == 20
-    assert by_cause[Cause.METER_FAULT].decision.action is Action.DISPATCH_METER_TECH
+    # With the researched costs (#8) a technician visit costs $650, so for one quiet meter the
+    # rules' confidence is not high enough to justify a visit straight away: waiting is cheaper
+    # on average ($150 against $165). The power cut next to it still gets a crew.
+    assert by_cause[Cause.METER_FAULT].decision.action is Action.WAIT_FOR_NETWORK
+    assert by_cause[Cause.POWER].decision.action is Action.DISPATCH_POWER_CREW
 
 
 def test_quiet_day_gives_nothing():
