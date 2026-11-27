@@ -210,7 +210,7 @@ class NaiveBayes:
         )
 
     def save(self, path: Path) -> None:
-        path.write_text(self.to_json(), encoding="utf-8")
+        path.write_text(self.to_json() + "\n", encoding="utf-8")
 
     @classmethod
     def load(cls, path: Path) -> "NaiveBayes":

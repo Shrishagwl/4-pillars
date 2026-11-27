@@ -60,7 +60,8 @@ def write_results(out_dir: Path, outcomes: list[Outcome], title: str = "Results"
     (out_dir / "summary.json").write_text(
         json.dumps(
             {"systems": [s.as_dict() for s in summaries], "accuracy_by_kind": by_kind}, indent=2
-        ),
+        )
+        + "\n",
         encoding="utf-8",
     )
 
