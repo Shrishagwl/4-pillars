@@ -73,6 +73,21 @@ def test_incident_closes_when_it_ages_out_of_the_window():
     assert closed.assessment.result.cause is Cause.METER_FAULT  # last verdict is kept
 
 
+def test_power_cut_keeps_its_verdict_while_it_ages_out():
+    events = power_outage_on("T5")
+    tracker = IncidentTracker(TOPOLOGY)
+    [incident] = tracker.update(events, NOW)
+    assert incident.assessment.result.cause is Cause.POWER
+
+    # Nine minutes on, the last gasps have left the window but the timed-out meters have not.
+    later = NOW + timedelta(minutes=9)
+    [still] = tracker.update(events, later)
+    assert still.incident_id == incident.incident_id
+    assert still.assessment.result.cause is Cause.POWER
+    assert len(still.meter_ids) == 20
+    assert len(still.history) == 1
+
+
 def test_incident_gives_a_verdict_for_the_dashboard():
     tracker = IncidentTracker(TOPOLOGY)
     [incident] = tracker.update(power_outage_on("T5"), NOW)
