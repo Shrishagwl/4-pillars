@@ -1,0 +1,12 @@
+# One meter breaks on its own, and a technician replaces it 1 to 2 hours later.
+# Answer key: METER_FAULT. The engine should see a single meter go quiet with code 7 and
+# nothing else around it, and send a meter technician rather than a power crew.
+name: meter-failure
+description: One meter dies sometime between 01:00 and 03:00 and is replaced 1 to 2 hours later.
+twin_seed: 42
+duration_min: 360   # 6 hours: room for the latest failure plus the longest repair
+faults:
+  - kind: meter
+    at_min: [60, 180]       # each run picks a minute in this window
+    meter: random           # each run's seed picks a different one
+    restore_after_min: [60, 120]
