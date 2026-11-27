@@ -46,7 +46,9 @@ export function actionSentence(incident: Incident): string {
     case 'DISPATCH_POWER_CREW':
       return `Dispatch a power crew to transformer ${transformers}`;
     case 'WAIT_FOR_NETWORK':
-      return `Hold crews: Telstra network outage in ${incident.suburb}`;
+      return incident.cause === 'NETWORK'
+        ? `Hold crews: Telstra network outage in ${incident.suburb}`
+        : 'Wait and watch: not worth a visit yet, it may come back by itself';
     case 'DISPATCH_METER_TECH':
       return `Send a technician to meter ${incident.meterIds[0]}`;
     case 'INVESTIGATE_TAMPER':

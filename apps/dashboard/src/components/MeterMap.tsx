@@ -46,7 +46,9 @@ export function MeterMap({ meters, incidents, selectedId, onSelect, focusId }: P
     <MapContainer
       className="meter-map"
       bounds={bounds}
-      boundsOptions={{ padding: isMini ? [24, 24] : [8, 8] }}
+      boundsOptions={
+        isMini ? { padding: [24, 24] } : { paddingTopLeft: [8, 64], paddingBottomRight: [8, 8] } // room for the header chip
+      }
       preferCanvas
       zoomSnap={0.25}
       zoomControl={!isMini}

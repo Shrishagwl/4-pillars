@@ -2,18 +2,18 @@
  * The cost model, copied from the engine (services/engine/src/engine/decision.py) so the
  * dashboard can explain the engine's choice in dollars.
  *
- * Every number is a placeholder until task 3 ("Set the cost of each decision") is done.
- * When the real costs are agreed, change them here AND in the engine.
+ * Values from task 3 ("Set the cost of each decision"). Sources and working for every number
+ * are in docs/decision-costs.md. If you change one here, change it in the engine too.
  */
 import type { Action, Cause, Incident } from '../types.ts';
 
 export const COSTS = {
-  truckRoll: 300, // one technician visit
-  powerCrew: 800, // one power crew call-out
-  latePowerPerMeter: 10, // a power cut we did not act on, per customer
-  meterLeftBroken: 100, // a faulty meter we did not send anyone to
-  missedTamper: 500, // tampering we did not investigate
-  manualReview: 8, // ten minutes of an operator
+  truckRoll: 650, // one technician visit (Jemena wasted site attendance fee, business hours)
+  powerCrew: 1200, // one power crew call-out (2 workers x 2 hours)
+  latePowerPerMeter: 28, // a power cut we did not act on, per customer (AER value of reliability)
+  meterLeftBroken: 125, // a faulty meter left alone: two manual reads until it is fixed
+  missedTamper: 600, // tampering not investigated: about six months of stolen power
+  manualReview: 20, // ten minutes of an operator
   reviewDelayShare: 0.1, // a review delays the real fix by this share of doing nothing
 };
 
@@ -92,6 +92,19 @@ export function chooseAction(probabilities: Record<string, number>, meters: numb
     runnerUp: runnerUp.action,
     runnerUpCost: runnerUp.cost,
   };
+}
+
+/** Does this action send someone out? */
+export function sendsSomeone(action: Action): boolean {
+  return visit(action) > 0;
+}
+
+/**
+ * Truck visits avoided compared with the simplest rule (baseline B0): one visit per silent
+ * meter, minus the one visit we make if the engine does send someone.
+ */
+export function dispatchesAvoided(incident: Incident): number {
+  return Math.max(0, incident.meterCount - (sendsSomeone(incident.action) ? 1 : 0));
 }
 
 /**

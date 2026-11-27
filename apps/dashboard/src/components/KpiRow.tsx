@@ -1,5 +1,5 @@
 import type { Incident, Meter } from '../types.ts';
-import { savedDollars } from '../utils/costs.ts';
+import { dispatchesAvoided, savedDollars } from '../utils/costs.ts';
 import { count, dollars, duration, percent } from '../utils/format.ts';
 
 interface Props {
@@ -17,6 +17,7 @@ export function KpiRow({ meters, incidents, now }: Props) {
   );
   const avgVerdict = verdictTimes.reduce((a, b) => a + b, 0) / Math.max(verdictTimes.length, 1);
   const saved = incidents.reduce((sum, i) => sum + savedDollars(i), 0);
+  const avoided = incidents.reduce((sum, i) => sum + dispatchesAvoided(i), 0);
 
   return (
     <section className="kpi-row" aria-label="Key numbers">
@@ -40,7 +41,7 @@ export function KpiRow({ meters, incidents, now }: Props) {
       <Kpi
         label="Saved today"
         value={dollars(saved)}
-        note="vs. a technician to every silent meter"
+        note={`${count(avoided)} truck visits avoided vs. one per silent meter`}
         highlight
       />
     </section>

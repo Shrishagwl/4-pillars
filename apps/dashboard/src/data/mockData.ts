@@ -293,7 +293,7 @@ export function createMockData(seed = 42, now = Date.now()): DashboardData {
       {
         id: 'INC-0141',
         meters: networkMeters,
-        probabilities: { NETWORK: 0.81, POWER: 0.14, METER_FAULT: 0.03, TAMPER: 0.02 },
+        probabilities: { NETWORK: 0.9, POWER: 0.06, METER_FAULT: 0.02, TAMPER: 0.02 },
         minutesAgo: 9,
         secondsToVerdict: 140,
         spreadSeconds: 172,
