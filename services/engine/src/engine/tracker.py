@@ -10,10 +10,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from .clustering import DEFAULT_WINDOW
 from .contracts import Action, Cause, MeterSilentEvent, Verdict
 from .decision import DEFAULT_COSTS, Costs
 from .evidence import to_verdict
-from .pipeline import Assessment, Scorer, Signals, assess
+from .pipeline import Assessment, Scorer, Signals, assess, assess_cluster
 from .rules import score_v1
 from .topology import Topology
 
@@ -113,6 +114,12 @@ class IncidentTracker:
                 unclaimed.remove(match)
                 incident = match
                 old = incident.assessment
+                if self._winding_down(old, meter_ids, now):
+                    # Keep the whole cluster, but still listen to the APIs: a tamper's SIM
+                    # can turn up somewhere else long after the meter went quiet.
+                    assessment = assess_cluster(
+                        old.cluster, self._topology, signals or Signals(), self._scorer, self._costs
+                    )
                 incident.assessment = assessment
                 if self._verdict_changed(old, assessment):
                     self._record(incident, now, explain_change(old, assessment))
@@ -125,6 +132,21 @@ class IncidentTracker:
             self.closed.append(incident)
         self.open = still_open
         return still_open
+
+    @staticmethod
+    def _winding_down(old: Assessment, meter_ids: set[str], now: datetime) -> bool:
+        """True when the cluster only shrank because its first meters aged out of the window.
+
+        Without this, a power cut slowly turns into a "meter fault": the last-gasp meters drop
+        out of the 15-minute window first, and the last few timed-out meters left behind look
+        like one broken meter. Nothing new was learned about the meters, so the incident keeps
+        all of them until it closes. Meters that came back (a restore) are recent, so they don't
+        count here.
+        """
+        gone = [m for m in old.cluster.members if m.meter.meter_id not in meter_ids]
+        old_ids = {m.meter.meter_id for m in old.cluster.members}
+        aged_out = now - DEFAULT_WINDOW
+        return bool(gone) and meter_ids <= old_ids and all(m.silent_at < aged_out for m in gone)
 
     @staticmethod
     def _verdict_changed(old: Assessment, new: Assessment) -> bool:

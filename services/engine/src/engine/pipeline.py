@@ -55,16 +55,27 @@ def assess(
     Pass either `outage_suburbs` on its own (the common case) or a full `signals`.
     """
     signals = signals or Signals(outage_suburbs=outage_suburbs)
-    assessments = []
-    for cluster in cluster_silent_meters(events, topology, now, restored=signals.restored):
-        clues = compute_clues(
-            cluster,
-            topology,
-            signals.outage_suburbs,
-            outage_msisdns=signals.outage_msisdns,
-            moved_msisdns=signals.moved_msisdns,
-        )
-        result = scorer(clues)
-        decision = choose_action(result.probabilities, cluster.size, costs)
-        assessments.append(Assessment(cluster, clues, result, decision))
-    return assessments
+    return [
+        assess_cluster(cluster, topology, signals, scorer, costs)
+        for cluster in cluster_silent_meters(events, topology, now, restored=signals.restored)
+    ]
+
+
+def assess_cluster(
+    cluster: Cluster,
+    topology: Topology,
+    signals: Signals,
+    scorer: Scorer = score_v1,
+    costs: Costs = DEFAULT_COSTS,
+) -> Assessment:
+    """Clues, cause and action for one cluster, with what the APIs say right now."""
+    clues = compute_clues(
+        cluster,
+        topology,
+        signals.outage_suburbs,
+        outage_msisdns=signals.outage_msisdns,
+        moved_msisdns=signals.moved_msisdns,
+    )
+    result = scorer(clues)
+    decision = choose_action(result.probabilities, cluster.size, costs)
+    return Assessment(cluster, clues, result, decision)
