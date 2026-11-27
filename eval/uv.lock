@@ -64,9 +64,11 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.162.2" },
+    { name = "google-genai", marker = "extra == 'llm'", specifier = ">=1.0" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
+provides-extras = ["llm"]
 
 [package.metadata.requires-dev]
 dev = [
