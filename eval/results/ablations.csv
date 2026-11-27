@@ -1,0 +1,10 @@
+variant,system,accuracy,macro_f1,false_dispatches_per_run,cost_per_run,api_calls_per_run,brier
+all clues,engine-v2,0.9350,0.9361,1.7100,1119.2800,43.8300,0.1138
+without size,engine-v2,0.9350,0.9366,1.7150,1122.5300,43.8300,0.1105
+without worst_transformer,engine-v2,0.9450,0.9459,1.7150,1122.5300,43.8300,0.1044
+without spread_across,engine-v2,0.9350,0.9361,1.7200,1125.5800,43.8300,0.1194
+without burst,engine-v2,0.9350,0.9361,1.7100,1119.2800,43.8300,0.1144
+without detached,engine-v2,0.7300,0.6519,0.1800,132.4375,43.8300,0.2323
+without duration,engine-v2,0.9450,0.9454,1.7100,1119.0800,43.8300,0.1023
+without outage,engine-v2,0.9350,0.9361,1.7150,1104.0080,43.8300,0.1108
+without location,engine-v2,0.8800,0.8787,1.7650,1137.2550,43.8300,0.1822
