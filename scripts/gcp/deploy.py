@@ -133,6 +133,10 @@ def render_service(settings, service, image, urls):
         "run.googleapis.com/startup-cpu-boost": "false",
         "run.googleapis.com/execution-environment": "gen2",
     }
+    if service in {"twin", "engine"}:
+        # The twin plays scenarios and the engine re-scores on a timer, both between requests,
+        # so they need CPU when no request is open. Still scales to zero when idle.
+        annotations["run.googleapis.com/cpu-throttling"] = "false"
     if settings.cloud_sql_instance and service in {"ingest-api", "engine"}:
         annotations["run.googleapis.com/cloudsql-instances"] = settings.cloud_sql_instance
     return {
