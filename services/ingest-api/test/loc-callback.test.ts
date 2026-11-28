@@ -26,7 +26,7 @@ describe(`POST ${LOC_CALLBACK_PATH}`, () => {
   it('accepts a valid callback with 202', async () => {
     const res = await app.inject({ method: 'POST', url: LOC_CALLBACK_PATH, payload: valid });
     expect(res.statusCode).toBe(202);
-    expect(res.json()).toEqual({ accepted: 1 });
+    expect(res.json()).toEqual({ accepted: 1, duplicates: 0 });
   });
 
   it('rejects a reason code outside 0-8', async () => {
