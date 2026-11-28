@@ -55,6 +55,7 @@ jobs:
       GCP_USE_APPLICATION_SECRETS: ${{ vars.GCP_USE_APPLICATION_SECRETS || 'false' }}
       GCP_ENABLED_SECRETS: ${{ vars.GCP_ENABLED_SECRETS }}
       GCP_PUBSUB_TOPIC: ${{ vars.GCP_PUBSUB_TOPIC }}
+      GCP_TELSTRA_MODE: ${{ vars.GCP_TELSTRA_MODE }}
     steps:
       - uses: actions/checkout@v5
         with:

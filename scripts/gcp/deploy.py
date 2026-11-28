@@ -42,6 +42,8 @@ class Settings:
     cloud_sql_instance: str = ""
     log_level: str = "info"
     use_application_secrets: bool = False
+    # "fake" points the gateway at telstra-fake; "real" at Telstra's sandbox (#36).
+    telstra_mode: str = "fake"
     # Short topic name ingest-api publishes to; empty keeps the HTTP hand-off.
     pubsub_topic: str = ""
     # Which secrets have a version yet. Empty with use_application_secrets = all of them.
@@ -64,6 +66,8 @@ class Settings:
             raise ValueError("Cloud SQL instance must belong to the deployment project")
         if self.log_level not in {"debug", "info", "warn", "error"}:
             raise ValueError("Unsupported log level")
+        if self.telstra_mode not in {"fake", "real"}:
+            raise ValueError("GCP_TELSTRA_MODE must be fake or real")
         if self.pubsub_topic and not re.fullmatch(r"[a-z][a-z0-9-]*", self.pubsub_topic):
             raise ValueError("Pub/Sub topic must be a short lowercase name")
         known = {secret for names in SECRETS.values() for secret in names.values()}
@@ -88,6 +92,7 @@ class Settings:
             log_level=os.getenv("GCP_LOG_LEVEL") or "info",
             use_application_secrets=secret_opt_in == "true",
             pubsub_topic=os.getenv("GCP_PUBSUB_TOPIC") or "",
+            telstra_mode=os.getenv("GCP_TELSTRA_MODE") or "fake",
             enabled_secrets=tuple(
                 name.strip() for name in (os.getenv("GCP_ENABLED_SECRETS") or "").split(",")
                 if name.strip()
@@ -109,7 +114,12 @@ def validate_images(settings, images):
 
 def render_service(settings, service, image, urls):
     env = [{"name": "LOG_LEVEL", "value": settings.log_level}]
-    for key, target in DEPENDENCIES[service].items():
+    dependencies = dict(DEPENDENCIES[service])
+    if service == "telstra-gateway" and settings.telstra_mode == "real":
+        # Real Telstra: no fake URL, the gateway uses Telstra's hosts and the mounted secrets.
+        dependencies.pop("TELSTRA_BASE_URL")
+        env.append({"name": "TELSTRA_MODE", "value": "real"})
+    for key, target in dependencies.items():
         url = urls[target]
         if not re.fullmatch(r"https://[a-z0-9-]+(?:\.[a-z0-9-]+)*\.run\.app", url):
             raise ValueError(f"Expected a private Cloud Run HTTPS URL for {target}")
