@@ -3,11 +3,13 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify from 'fastify';
 import type { Config } from './config.js';
 import { Clock } from './lib/clock.js';
+import { DeviceStore } from './lib/device-store.js';
 import { LocStore } from './lib/loc-store.js';
 import { OutageStore } from './lib/outage-store.js';
 import { loggerOptions } from './logger.js';
 import { fakeClockRoutes } from './routes/fake-clock.js';
 import { healthRoutes } from './routes/health.js';
+import { locationVerificationRoutes } from './routes/location-verification.js';
 import { lossOfConnectivityRoutes } from './routes/loss-of-connectivity.js';
 import { networkAvailabilityRoutes } from './routes/network-availability.js';
 import { tokenRoutes } from './routes/token.js';
@@ -33,6 +35,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}) {
   const clock = opts.clock ?? new Clock();
   await app.register(fakeClockRoutes, { clock });
   await app.register(networkAvailabilityRoutes, { store: new OutageStore(clock) });
+  await app.register(locationVerificationRoutes, { store: new DeviceStore(clock) });
 
   return app;
 }
