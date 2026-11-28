@@ -23,7 +23,6 @@ from datetime import datetime, timedelta
 
 from .clock import DEFAULT_START, Heartbeat, TwinClock
 from .faults import (
-    LOC_DETECTION_TIMEOUT,
     LocReport,
     OutageNotice,
     Relocation,
@@ -35,6 +34,7 @@ from .faults import (
     restore_power,
     tamper_reappear,
     tamper_removal,
+    timeout_code,
 )
 from .grid import build_twin
 from .scenario import Cause, NetworkFault, Noise, Scenario, ScheduledFault, TamperFault, schedule
@@ -162,7 +162,9 @@ def run_scenario(scenario: Scenario, seed: int, start: datetime = DEFAULT_START)
                 reconnect.setdefault(back_minute, []).append(meter_id)
                 background.append(record(msisdn_of[meter_id]))
                 if report is not None:
-                    reports.append(LocReport(msisdn_of[meter_id], LOC_DETECTION_TIMEOUT, report))
+                    reports.append(
+                        LocReport(msisdn_of[meter_id], timeout_code(msisdn_of[meter_id]), report)
+                    )
         heartbeats += clock.step()
 
     answer_key = tuple(

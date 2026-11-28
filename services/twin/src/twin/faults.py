@@ -5,27 +5,27 @@ meters' switches on the clock and returns the Loss of Connectivity reports Telst
 
 Power outage (#18), the fingerprint the engine looks for:
   - every meter on the transformer goes off within a few seconds of each other;
-  - most send a "last gasp" as they die (LoC code 6, detached): the meter's capacitor holds just
+  - most send a "last gasp" as they die (a "detached" LoC code): the meter's capacitor holds just
     enough charge to tell the network it's going;
   - the rest just vanish, and the network only notices when its detection timer runs out a few
-    minutes later (LoC code 7, maximum detection time expired).
+    minutes later (a "maximum detection time expired" code).
 Network outage (#21), a different fingerprint:
   - only part of a suburb goes quiet (60-90%), one meter after another over a few minutes,
     across many transformers;
-  - no last gasps, because the meters still have power: every report is code 7;
+  - no last gasps, because the meters still have power: every report is a detection timeout;
   - some time later, Telstra lists the outage on its Network Availability API.
-Meter failure (#28): one meter dies without warning (no last gasp), code 7 when the network's
+Meter failure (#28): one meter dies without warning (no last gasp), a timeout when the network's
 timer runs out, and nothing else around it goes quiet.
 Tamper (#31): one meter is unplugged (often a last gasp, like a tiny power cut), then its SIM
 comes back online kilometres away, which Location Verification can catch.
-Default numbers match the engine's own test fixtures (engine/tests/test_pipeline.py); #23
-calibrates them against the research in #3.
+Where the numbers come from, and which are estimates: docs/twin-calibration.md (#23).
 """
 
 from __future__ import annotations
 
 import math
 import random
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -33,8 +33,29 @@ from .clock import TwinClock
 from .grid import M_PER_DEG_LAT, M_PER_DEG_LON
 from .scenario import MeterFault, NetworkFault, PowerFault, ScheduledFault, TamperFault
 
-LOC_LAST_GASP = 6  # detached / deregistered
-LOC_DETECTION_TIMEOUT = 7  # maximum detection time expired
+# Telstra's LoC codes come in families by core network (Getting Started page on dev.telstra.com):
+# MME is 4G, SGSN is 2G/3G, AMF is 5G. Telstra switched 3G off on 28 Oct 2024, so no SGSN codes.
+# Meter SIMs are mostly 4G (LTE / Cat-M1); we put about 1 in 10 on 5G (an estimate, see #23).
+LOC_LAST_GASP_4G = 0  # UE_DETACHED_MME
+LOC_TIMEOUT_4G = 2  # MAX_DETECTION_TIME_EXPIRED_MME
+LOC_LAST_GASP_5G = 6  # DEREGISTERED (AMF)
+LOC_TIMEOUT_5G = 7  # MAX_DETECTION_TIME_EXPIRED (AMF)
+LAST_GASP_CODES = frozenset({LOC_LAST_GASP_4G, LOC_LAST_GASP_5G})
+TIMEOUT_CODES = frozenset({LOC_TIMEOUT_4G, LOC_TIMEOUT_5G})
+FIVE_G_SHARE = 0.10
+
+
+def on_5g(msisdn: str) -> bool:
+    """Which core a SIM is on. Fixed per SIM (a hash), so it doesn't change between runs."""
+    return zlib.crc32(msisdn.encode()) % 100 < FIVE_G_SHARE * 100
+
+
+def last_gasp_code(msisdn: str) -> int:
+    return LOC_LAST_GASP_5G if on_5g(msisdn) else LOC_LAST_GASP_4G
+
+
+def timeout_code(msisdn: str) -> int:
+    return LOC_TIMEOUT_5G if on_5g(msisdn) else LOC_TIMEOUT_4G
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,10 +92,12 @@ def power_outage(planned: ScheduledFault, clock: TwinClock, rng: random.Random) 
             continue
         dropped_at = start + timedelta(seconds=rng.uniform(0, fault.drop_within_s))
         if rng.random() < fault.last_gasp_share:
-            reports.append(LocReport(msisdn[meter_id], LOC_LAST_GASP, dropped_at))
+            reports.append(
+                LocReport(msisdn[meter_id], last_gasp_code(msisdn[meter_id]), dropped_at)
+            )
         else:
             noticed_at = dropped_at + timedelta(seconds=rng.uniform(low, high))
-            reports.append(LocReport(msisdn[meter_id], LOC_DETECTION_TIMEOUT, noticed_at))
+            reports.append(LocReport(msisdn[meter_id], timeout_code(msisdn[meter_id]), noticed_at))
 
     clock.set_powered(planned.meter_ids, False)
     return reports
@@ -117,7 +140,7 @@ def network_outage(
     for meter_id in hit:
         lost_signal_at = start + timedelta(seconds=rng.uniform(0, fault.drop_over_s))
         noticed_at = lost_signal_at + timedelta(seconds=rng.uniform(low, high))
-        reports.append(LocReport(msisdn[meter_id], LOC_DETECTION_TIMEOUT, noticed_at))
+        reports.append(LocReport(msisdn[meter_id], timeout_code(msisdn[meter_id]), noticed_at))
 
     clock.set_connected(hit, False)
     return reports
@@ -136,7 +159,7 @@ def meter_failure(planned: ScheduledFault, clock: TwinClock, rng: random.Random)
     died_at = clock.now + timedelta(seconds=rng.uniform(0, 60))
     noticed_at = died_at + timedelta(seconds=rng.uniform(*fault.detection_delay_s))
     clock.set_healthy([meter_id], False)
-    return [LocReport(_msisdn(clock, meter_id), LOC_DETECTION_TIMEOUT, noticed_at)]
+    return [LocReport(_msisdn(clock, meter_id), timeout_code(_msisdn(clock, meter_id)), noticed_at)]
 
 
 def restore_meter(planned: ScheduledFault, clock: TwinClock) -> None:
@@ -168,9 +191,9 @@ def tamper_removal(
     unplugged_at = clock.now + timedelta(seconds=rng.uniform(0, 60))
     clock.set_powered([meter_id], False)
     if rng.random() < fault.last_gasp_share:
-        return [LocReport(msisdn, LOC_LAST_GASP, unplugged_at)]
+        return [LocReport(msisdn, last_gasp_code(msisdn), unplugged_at)]
     noticed_at = unplugged_at + timedelta(seconds=rng.uniform(*fault.detection_delay_s))
-    return [LocReport(msisdn, LOC_DETECTION_TIMEOUT, noticed_at)]
+    return [LocReport(msisdn, timeout_code(msisdn), noticed_at)]
 
 
 def tamper_reappear(planned: ScheduledFault, clock: TwinClock, rng: random.Random) -> Relocation:

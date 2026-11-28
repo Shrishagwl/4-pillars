@@ -1,11 +1,10 @@
-from collections import Counter
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
 from twin.clock import DEFAULT_START, HEARTBEAT_EVERY_MIN
-from twin.faults import LOC_DETECTION_TIMEOUT, LOC_LAST_GASP
+from twin.faults import LAST_GASP_CODES, TIMEOUT_CODES
 from twin.grid import build_twin
 from twin.run import run_scenario
 from twin.scenario import Cause, load_scenario, parse_scenario
@@ -30,7 +29,7 @@ def test_answer_key_says_power_on_one_transformer(result):
     assert (
         timedelta(minutes=60)
         <= incident.restored_at - incident.started_at
-        <= timedelta(minutes=120)
+        <= timedelta(minutes=180)
     )
 
 
@@ -45,13 +44,13 @@ def test_every_meter_on_the_transformer_reports_and_no_other_meter_does(result):
 
 def test_most_send_a_last_gasp_within_seconds_the_rest_time_out_later(result):
     [incident] = result.answer_key
-    codes = Counter(r.reason_code for r in result.loc_reports)
-    assert set(codes) == {LOC_LAST_GASP, LOC_DETECTION_TIMEOUT}
-    assert 0.5 < codes[LOC_LAST_GASP] / len(result.loc_reports) < 0.9
+    gasps = sum(r.reason_code in LAST_GASP_CODES for r in result.loc_reports)
+    assert {r.reason_code for r in result.loc_reports} <= LAST_GASP_CODES | TIMEOUT_CODES
+    assert 0.5 < gasps / len(result.loc_reports) < 0.9
 
     for r in result.loc_reports:
         after = (r.event_time - incident.started_at).total_seconds()
-        if r.reason_code == LOC_LAST_GASP:
+        if r.reason_code in LAST_GASP_CODES:
             assert 0 <= after <= 10
         else:
             assert 120 <= after <= 250

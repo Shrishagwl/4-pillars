@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 import pytest
-from engine.contracts import Cause
+from engine.contracts import Cause, ReasonGroup
 
 from evaluation.sim import KINDS, SimSettings, build_grid, scenario_for, simulate
 
@@ -47,7 +47,7 @@ def test_power_cut_hits_one_transformer_with_last_gasps():
     by_id = {m.meter_id: m for m in run.grid.meters}
     assert run.truth is Cause.POWER
     assert len({by_id[mid].transformer_id for mid in run.truth_meter_ids}) == 1
-    gasps = sum(1 for e in run.events if e.reasonCode == 6)
+    gasps = sum(1 for e in run.events if e.reasonGroup is ReasonGroup.DETACHED)  # codes 0 or 6
     assert 0.5 < gasps / len(run.events) < 0.9  # about 70%
 
 

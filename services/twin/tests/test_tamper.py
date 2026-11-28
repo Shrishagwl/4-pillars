@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from twin.faults import LOC_DETECTION_TIMEOUT, LOC_LAST_GASP
+from twin.faults import LAST_GASP_CODES, TIMEOUT_CODES
 from twin.grid import build_twin, distance_m
 from twin.run import run_scenario
 from twin.scenario import Cause, ScenarioError, load_scenario, parse_scenario
@@ -37,7 +37,7 @@ def test_answer_key_says_tamper_on_one_meter_never_repaired(result):
 def test_it_goes_silent_with_one_report(result, home):
     [report] = result.loc_reports
     assert report.msisdn == home.msisdn
-    assert report.reason_code in {LOC_LAST_GASP, LOC_DETECTION_TIMEOUT}
+    assert report.reason_code in LAST_GASP_CODES | TIMEOUT_CODES
 
 
 def test_its_sim_turns_up_kilometres_from_home(result, home):
@@ -69,7 +69,7 @@ def test_moved_msisdns_only_after_it_has_moved(result, home):
 
 def test_both_report_codes_happen_across_seeds(scenario):
     codes = {run_scenario(scenario, seed).loc_reports[0].reason_code for seed in range(12)}
-    assert codes == {LOC_LAST_GASP, LOC_DETECTION_TIMEOUT}
+    assert codes & LAST_GASP_CODES and codes & TIMEOUT_CODES
 
 
 def test_same_seed_same_run_different_seeds_differ(scenario):
