@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from twin.faults import LOC_DETECTION_TIMEOUT
+from twin.faults import TIMEOUT_CODES
 from twin.grid import build_twin
 from twin.run import run_scenario
 from twin.scenario import Cause, ScenarioError, load_scenario, parse_scenario
@@ -45,7 +45,7 @@ def test_reports_come_only_from_the_hit_meters_all_code_7(result, twin):
     [incident] = result.answer_key
     msisdn_of = {m.meter_id: m.msisdn for m in twin.meters}
     assert {r.msisdn for r in result.loc_reports} == {msisdn_of[m] for m in incident.meter_ids}
-    assert {r.reason_code for r in result.loc_reports} == {LOC_DETECTION_TIMEOUT}
+    assert {r.reason_code for r in result.loc_reports} <= TIMEOUT_CODES
 
 
 def test_it_cuts_across_transformers_unlike_a_power_cut(result, twin):

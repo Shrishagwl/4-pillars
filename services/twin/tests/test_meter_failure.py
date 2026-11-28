@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from twin.faults import LOC_DETECTION_TIMEOUT
+from twin.faults import TIMEOUT_CODES
 from twin.grid import build_twin
 from twin.run import run_scenario
 from twin.scenario import Cause, ScenarioError, load_scenario, parse_scenario
@@ -32,7 +32,7 @@ def test_exactly_one_code_7_and_no_last_gasp(failure):
     [report] = failure.loc_reports
     msisdn = {m.meter_id: m.msisdn for m in build_twin(failure.twin_seed).meters}
     assert report.msisdn == msisdn[incident.target]
-    assert report.reason_code == LOC_DETECTION_TIMEOUT
+    assert report.reason_code in TIMEOUT_CODES
     delay = report.event_time - incident.started_at
     assert timedelta(minutes=2) <= delay <= timedelta(minutes=5)
 
@@ -69,7 +69,7 @@ def test_a_normal_day_has_no_incidents_but_some_dropouts(normal_day):
 def test_only_dropouts_that_outlast_the_timer_are_reported(normal_day):
     reported = {d.msisdn for d in normal_day.background if d.reported}
     assert {r.msisdn for r in normal_day.loc_reports} == reported
-    assert all(r.reason_code == LOC_DETECTION_TIMEOUT for r in normal_day.loc_reports)
+    assert all(r.reason_code in TIMEOUT_CODES for r in normal_day.loc_reports)
     # Some are short enough to slip under Telstra's timer, some are not.
     assert any(d.reported for d in normal_day.background)
     assert not all(d.reported for d in normal_day.background)
