@@ -2,6 +2,7 @@ import { LocCallback, reasonGroup } from '@4p/contracts';
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 import type { IngestStore } from '../db/store.js';
+import type { Publisher } from '../publisher.js';
 
 /** The callback URL we give Telstra when subscribing meters to Loss of Connectivity. */
 export const LOC_CALLBACK_PATH = '/loss-of-connectivity/v0/events';
@@ -9,11 +10,13 @@ export const LOC_CALLBACK_PATH = '/loss-of-connectivity/v0/events';
 export interface LocCallbackOptions {
   /** Left out in tests that don't need a database: reports are then only logged. */
   store?: IngestStore;
+  /** Hands the events to the engine. Left out = store only. */
+  publisher?: Publisher;
 }
 
 export const locCallbackRoutes: FastifyPluginAsyncTypebox<LocCallbackOptions> = async (
   app,
-  { store },
+  { store, publisher },
 ) => {
   app.post(
     LOC_CALLBACK_PATH,
@@ -39,14 +42,16 @@ export const locCallbackRoutes: FastifyPluginAsyncTypebox<LocCallbackOptions> = 
           'loss of connectivity reported',
         );
       }
-      // If the database is down this throws and Fastify answers 500, so Telstra can retry.
-      const stored = store
-        ? await store.addReports(subscriptionId, monitoringEventReports, new Date())
-        : null;
-      const accepted = stored ? stored.length : monitoringEventReports.length;
-      return reply
-        .code(202)
-        .send({ accepted, duplicates: monitoringEventReports.length - accepted });
+      // If the database or the hand-off fails this throws and Fastify answers 500, so Telstra
+      // retries. Repeats are not stored twice but are passed on again (the engine drops them
+      // by event id), so nothing is lost when only the hand-off failed.
+      if (!store) {
+        return reply.code(202).send({ accepted: monitoringEventReports.length, duplicates: 0 });
+      }
+      const results = await store.addReports(subscriptionId, monitoringEventReports, new Date());
+      await publisher?.publish(results.map((r) => r.event));
+      const accepted = results.filter((r) => r.isNew).length;
+      return reply.code(202).send({ accepted, duplicates: results.length - accepted });
     },
   );
 };
