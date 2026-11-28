@@ -3,9 +3,11 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify from 'fastify';
 import type pg from 'pg';
 import type { Config } from './config.js';
+import { IngestStore } from './db/store.js';
 import { loggerOptions } from './logger.js';
 import { healthRoutes } from './routes/health.js';
 import { locCallbackRoutes } from './routes/loc-callback.js';
+import { meterRoutes } from './routes/meters.js';
 
 export interface BuildOptions {
   /** Turn logging off in tests. */
@@ -22,7 +24,9 @@ export async function buildApp(config: Config, opts: BuildOptions = {}) {
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   await app.register(healthRoutes, { service: config.serviceName, version: config.version });
-  await app.register(locCallbackRoutes);
+  const store = opts.db ? new IngestStore(opts.db) : undefined;
+  await app.register(locCallbackRoutes, { store });
+  if (store) await app.register(meterRoutes, { store });
 
   return app;
 }
