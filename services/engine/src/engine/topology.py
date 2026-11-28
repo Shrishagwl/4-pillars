@@ -15,6 +15,12 @@ class Meter:
     msisdn: str
     transformer_id: str
     suburb: str
+    # Needed to ask Telstra about the meter (Network Availability takes suburb + state +
+    # postcode, Location Verification takes a point). Optional so older code still works.
+    postcode: str = ""
+    state: str = "VIC"
+    lat: float | None = None
+    lon: float | None = None
 
 
 class Topology:
