@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     telstra_fake_url: str = "http://localhost:8083"
     ingest_url: str = "http://localhost:8081"
     seed: int = 42
+    # ingest-api's key for writes (PUT /meters). Empty locally.
+    ingest_api_key: str = ""
+    # Where the named scenarios live (copied into the image).
+    scenarios_dir: str = "scenarios"
 
 
 @lru_cache

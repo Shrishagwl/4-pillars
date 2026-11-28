@@ -5,6 +5,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-install-project
 COPY src ./src
+COPY scenarios ./scenarios
 RUN uv sync --locked
 ARG APP_VERSION=dev
 ENV PATH=/app/.venv/bin:$PATH APP_VERSION=${APP_VERSION} PORT=8085

@@ -90,6 +90,14 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Settings(project="demo-project", region="australia-southeast1", enabled_secrets=("nope",))
 
+    def test_only_twin_and_engine_keep_cpu_between_requests(self):
+        for name in SERVICES:
+            annotations = render_service(self.settings, name, self.images[name], self.urls)[
+                "spec"]["template"]["metadata"]["annotations"]
+            expected = "false" if name in {"twin", "engine"} else "true"
+            self.assertEqual(annotations["run.googleapis.com/cpu-throttling"], expected)
+            self.assertEqual(annotations["autoscaling.knative.dev/minScale"], "0")
+
     def test_pubsub_topic_goes_to_ingest_only(self):
         settings = Settings(project="demo-project", region="australia-southeast1",
                             pubsub_topic="meter-silent")
