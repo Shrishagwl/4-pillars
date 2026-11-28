@@ -1,0 +1,4 @@
+# INACTIVE. Copy to backend.tf only after explicit approval and bucket provisioning.
+terraform {
+  backend "gcs" {}
+}

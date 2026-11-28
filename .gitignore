@@ -236,3 +236,15 @@ coverage/
 *.pem
 *-key.json
 service-account*.json
+
+# Deployment credentials, local state and generated manifests
+gha-creds-*.json
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+deployment-manifests/
+.tools/

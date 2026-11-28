@@ -1,0 +1,196 @@
+name: Deploy backends
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    uses: ./.github/workflows/deployment-checks.yml
+    with:
+      ref: ${{ github.event.workflow_run.head_sha }}
+
+  deploy:
+    needs: validate
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    outputs:
+      deployed: ${{ steps.release.outputs.deployed }}
+      service_urls: ${{ steps.release.outputs.service_urls }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY || 'four-pillars' }}
+      GCP_SERVICE_PREFIX: ${{ vars.GCP_SERVICE_PREFIX || 'four-pillars' }}
+      GCP_RUNTIME_SA_PREFIX: ${{ vars.GCP_RUNTIME_SA_PREFIX || 'fp' }}
+      GCP_SECRET_PREFIX: ${{ vars.GCP_SECRET_PREFIX || 'four-pillars' }}
+      GCP_SECRET_VERSION: ${{ vars.GCP_SECRET_VERSION || '1' }}
+      GCP_MAX_INSTANCES: ${{ vars.GCP_MAX_INSTANCES || '2' }}
+      GCP_CLOUD_SQL_INSTANCE: ${{ vars.GCP_CLOUD_SQL_INSTANCE }}
+      GCP_LOG_LEVEL: ${{ vars.GCP_LOG_LEVEL || 'info' }}
+      GCP_USE_APPLICATION_SECRETS: ${{ vars.GCP_USE_APPLICATION_SECRETS || 'false' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Validate configuration and deployment code
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOYER: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+        run: |
+          test -n "$WIF_PROVIDER" && test -n "$DEPLOYER"
+          python -c 'from scripts.gcp.deploy import Settings; Settings.from_env()'
+          python -m unittest discover -s scripts/gcp/tests -v
+
+      - name: Skip superseded main commits
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$latest" = "$DEPLOY_SHA" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'A newer main commit exists; skipping this deployment.'
+          fi
+
+      # Build before OIDC authentication: credentials never enter build contexts.
+      - name: Build the existing backend Dockerfiles
+        if: steps.current.outputs.deploy == 'true'
+        run: |
+          registry="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REPOSITORY"
+          for service in ingest-api telstra-gateway telstra-fake; do
+            docker build -f services/node.Dockerfile \
+              --build-arg "SERVICE_DIR=services/$service" --build-arg "APP_VERSION=$DEPLOY_SHA" \
+              -t "$registry/$service:$DEPLOY_SHA" .
+          done
+          for service in engine twin; do
+            docker build --build-arg "APP_VERSION=$DEPLOY_SHA" \
+              -t "$registry/$service:$DEPLOY_SHA" "services/$service"
+          done
+
+      - uses: google-github-actions/auth@v3
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        if: steps.current.outputs.deploy == 'true'
+
+      - name: Push images and record immutable digests
+        if: steps.current.outputs.deploy == 'true'
+        run: |
+          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
+          registry="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REPOSITORY"
+          mkdir -p deployment-manifests
+          for service in ingest-api telstra-gateway telstra-fake engine twin; do
+            image="$registry/$service:$DEPLOY_SHA"
+            docker push "$image"
+            docker image inspect "$image" --format '{{index .RepoDigests 0}}' > "deployment-manifests/$service.digest"
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.gcp.deploy import SERVICES
+          directory = Path('deployment-manifests')
+          images = {name: (directory / f'{name}.digest').read_text().strip() for name in SERVICES}
+          (directory / 'images.json').write_text(json.dumps(images, indent=2))
+          PY
+
+      - name: Deploy ready revisions (check main again after building)
+        id: release
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$latest" != "$DEPLOY_SHA" ]; then
+            echo 'A newer main commit exists; skipping this deployment.'
+            exit 0
+          fi
+          python scripts/gcp/deploy.py --images deployment-manifests/images.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          urls = json.loads(Path('deployment-manifests/service-urls.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('service_urls=' + json.dumps(urls, separators=(',', ':')) + '\n')
+              output.write('deployed=true\n')
+          PY
+
+      - name: Save image digests and revision configuration (no secret values)
+        if: always() && steps.current.outputs.deploy == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-${{ github.event.workflow_run.head_sha }}
+          path: deployment-manifests/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  verify:
+    name: Private health (${{ matrix.service }})
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [telstra-fake, telstra-gateway, engine, ingest-api, twin]
+    env:
+      CLOUD_RUN_URL: ${{ fromJSON(needs.deploy.outputs.service_urls)[matrix.service] }}
+      EXPECTED_SERVICE: ${{ matrix.service }}
+      EXPECTED_VERSION: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Obtain an audience-specific short-lived ID token
+        id: identity
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          create_credentials_file: false
+          token_format: id_token
+          id_token_audience: ${{ env.CLOUD_RUN_URL }}
+          id_token_include_email: true
+      - name: Verify the exact deployed application release
+        env:
+          CLOUD_RUN_ID_TOKEN: ${{ steps.identity.outputs.id_token }}
+        run: python -m scripts.gcp.health
