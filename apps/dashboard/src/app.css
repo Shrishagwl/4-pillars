@@ -981,3 +981,9 @@ fieldset.chips {
 fieldset.chips {
   padding: 0;
 }
+
+/* Shown only when the live backend can't be reached (VITE_DATA_SOURCE=api). */
+.live-error {
+  padding: 6px 24px;
+  background: var(--sand-40);
+}

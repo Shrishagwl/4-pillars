@@ -4,7 +4,8 @@ FROM node:22-alpine AS build
 WORKDIR /repo
 COPY . .
 ARG VITE_INGEST_URL=http://localhost:8081
-ENV VITE_INGEST_URL=${VITE_INGEST_URL}
+ARG VITE_DATA_SOURCE=mock
+ENV VITE_INGEST_URL=${VITE_INGEST_URL} VITE_DATA_SOURCE=${VITE_DATA_SOURCE}
 RUN npm ci --workspace apps/dashboard --include-workspace-root --ignore-scripts \
  && npm run build -w @4p/contracts \
  && npm run build -w @4p/dashboard

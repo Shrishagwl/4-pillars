@@ -8,25 +8,25 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { TopNav } from './components/TopNav.tsx';
-import { createMockData } from './data/mockData.ts';
+import { useDashboardData } from './data/source.ts';
 import { IncidentPage } from './pages/IncidentPage.tsx';
 import { OverviewPage } from './pages/OverviewPage.tsx';
 import type { Incident, View } from './types.ts';
 
-// For now the data is mock data (task 2). When ingest-api's GET /incidents and live updates
-// are ready, this is the one line that changes.
-const data = createMockData();
-
 export default function App() {
+  // Mock data by default; the live backend when built with VITE_DATA_SOURCE=api.
+  const data = useDashboardData();
   const [view, setView] = useState<View>('overview');
-  const [selectedId, setSelectedId] = useState(data.incidents[0]?.incidentId);
+  const [chosenId, setSelectedId] = useState<string | undefined>(undefined);
+  // Until the operator picks one, the newest incident is selected (also when new ones arrive).
+  const selectedId = chosenId ?? data.incidents[0]?.incidentId;
   const [search, setSearch] = useState('');
   const [doneIds, setDoneIds] = useState<string[]>([]);
   const now = useClock(30_000);
 
   const listed = useMemo(
     () => data.incidents.filter((incident) => matchesSearch(incident, search)),
-    [search],
+    [data.incidents, search],
   );
   const selected = data.incidents.find((i) => i.incidentId === selectedId);
 
@@ -48,6 +48,7 @@ export default function App() {
           if (text && view === 'overview') setView('incidents'); // show results in the queue
         }}
       />
+      {data.error && <p className="muted small live-error">{data.error}</p>}
       {view === 'overview' ? (
         <OverviewPage
           meters={data.meters}

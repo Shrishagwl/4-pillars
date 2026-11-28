@@ -7,6 +7,7 @@ import { IngestStore } from './db/store.js';
 import { loggerOptions } from './logger.js';
 import { type Publisher, publisherFromEnv } from './publisher.js';
 import { healthRoutes } from './routes/health.js';
+import { incidentRoutes } from './routes/incidents.js';
 import { locCallbackRoutes } from './routes/loc-callback.js';
 import { meterRoutes } from './routes/meters.js';
 
@@ -17,6 +18,8 @@ export interface BuildOptions {
   db?: pg.Pool;
   /** Where events go after they are stored. Defaults to what the config says. */
   publisher?: Publisher;
+  /** Tests pass a fake fetch for calls to the engine. */
+  fetch?: typeof fetch;
 }
 
 export async function buildApp(config: Config, opts: BuildOptions = {}) {
@@ -32,6 +35,9 @@ export async function buildApp(config: Config, opts: BuildOptions = {}) {
   app.log.info({ publisher: publisher?.kind ?? 'none' }, 'event hand-off');
   await app.register(locCallbackRoutes, { store, publisher });
   if (store) await app.register(meterRoutes, { store, apiKey: config.adminApiKey });
+  if (config.engineUrl) {
+    await app.register(incidentRoutes, { engineUrl: config.engineUrl, store, fetch: opts.fetch });
+  }
 
   return app;
 }
