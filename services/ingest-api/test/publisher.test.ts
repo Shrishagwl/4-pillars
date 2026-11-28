@@ -54,12 +54,12 @@ describe('publishers', () => {
     );
     const pub = new PubSubPublisher('projects/pillars-514405/topics/meter-silent', f.fetchImpl);
     await pub.publish([EVENT]);
-    const call = f.calls[1];
-    expect(call?.url).toBe(
+    const call = f.calls[1] as { url: string; init: RequestInit };
+    expect(call.url).toBe(
       'https://pubsub.googleapis.com/v1/projects/pillars-514405/topics/meter-silent:publish',
     );
-    expect((call?.init.headers as Record<string, string>).authorization).toBe('Bearer at');
-    const [message] = JSON.parse(call?.init.body as string).messages;
+    expect((call.init.headers as Record<string, string>).authorization).toBe('Bearer at');
+    const [message] = JSON.parse(call.init.body as string).messages;
     expect(JSON.parse(Buffer.from(message.data, 'base64').toString())).toEqual(EVENT);
     expect(message.attributes).toEqual({ eventId: EVENT.eventId, msisdn: EVENT.msisdn });
   });
