@@ -18,37 +18,50 @@ export class IngestStore {
   constructor(private readonly pool: pg.Pool) {}
 
   /**
-   * Store LoC reports. A report Telstra already sent (same SIM, time and reason) is skipped.
-   * Returns the new ones as MeterSilentEvents, ready to pass on to the engine.
+   * Store LoC reports. A report Telstra already sent (same SIM, time and reason) is not stored
+   * again, but it still comes back (with its original event id, `isNew: false`), so a retry
+   * after a failed hand-off to the engine still reaches the engine. The engine drops repeats by
+   * event id.
    */
   async addReports(
     subscriptionId: string,
     reports: MonitoringEventReport[],
     receivedAt: Date,
-  ): Promise<MeterSilentEvent[]> {
-    const stored: MeterSilentEvent[] = [];
+  ): Promise<Array<{ event: MeterSilentEvent; isNew: boolean }>> {
+    const out: Array<{ event: MeterSilentEvent; isNew: boolean }> = [];
     for (const r of reports) {
-      const eventId = crypto.randomUUID();
       const eventTime = new Date(r.eventTime); // Telstra may send an offset like +08:00
-      const res = await this.pool.query(
+      // The no-op update makes Postgres return the existing row on a conflict;
+      // xmax = 0 is how Postgres says "this row was just inserted".
+      const { rows } = await this.pool.query(
         `INSERT INTO ingest.loc_events (event_id, subscription_id, msisdn, reason_code, event_time, received_at)
          VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (msisdn, event_time, reason_code) DO NOTHING`,
-        [eventId, subscriptionId, r.msisdn, r.lossOfConnectReason, eventTime, receivedAt],
+         ON CONFLICT (msisdn, event_time, reason_code) DO UPDATE SET msisdn = EXCLUDED.msisdn
+         RETURNING event_id, received_at, (xmax = 0) AS is_new`,
+        [
+          crypto.randomUUID(),
+          subscriptionId,
+          r.msisdn,
+          r.lossOfConnectReason,
+          eventTime,
+          receivedAt,
+        ],
       );
-      if (res.rowCount) {
-        stored.push({
-          eventId,
+      const row = rows[0];
+      out.push({
+        isNew: row.is_new,
+        event: {
+          eventId: row.event_id,
           subscriptionId,
           msisdn: r.msisdn,
           reasonCode: r.lossOfConnectReason,
           reasonGroup: reasonGroup(r.lossOfConnectReason),
           eventTime: eventTime.toISOString(),
-          receivedAt: receivedAt.toISOString(),
-        });
-      }
+          receivedAt: new Date(row.received_at).toISOString(),
+        },
+      });
     }
-    return stored;
+    return out;
   }
 
   /** Insert or update meters by meter id. */

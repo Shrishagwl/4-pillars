@@ -60,10 +60,11 @@ services:
       PORT: 8081
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgres://pillars:${POSTGRES_PASSWORD:-pillars-local}@postgres:5432/pillars?options=-csearch_path%3Dingest
-      ENGINE_URL: http://engine:8084
+      ENGINE_URL: http://engine:8084  # locally events go to the engine over HTTP; Pub/Sub in the cloud
     ports: ["8081:8081"]
     depends_on:
       postgres: { condition: service_healthy }
+      engine: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
       <<: *node-health

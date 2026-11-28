@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from . import db
 from .config import Settings, get_settings
 from .logging import setup_logging
+from .receiver import EventSink, LoggingSink, make_router
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class Health(BaseModel):
     version: str
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, sink: EventSink | None = None) -> FastAPI:
     settings = settings or get_settings()
     setup_logging(
         settings.log_level, settings.service_name, settings.app_version, settings.log_json
@@ -42,7 +43,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health() -> Health:
         return Health(service=settings.service_name, version=settings.app_version)
 
-    # Add this service's routers here: app.include_router(...)
+    app.state.sink = sink or LoggingSink()
+    app.include_router(make_router(app.state.sink))
     log.info("app created", extra={"port": settings.port})
     return app
 

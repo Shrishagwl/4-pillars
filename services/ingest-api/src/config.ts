@@ -11,6 +11,10 @@ export interface Config {
   prettyLogs: boolean;
   /** Postgres, ingest schema. Empty = run without a database (tests, quick local runs). */
   databaseUrl: string;
+  /** Local hand-off: the engine's base URL. */
+  engineUrl: string;
+  /** Cloud hand-off: projects/<project>/topics/meter-silent. Wins over engineUrl when set. */
+  pubsubTopic: string;
 }
 
 export const SERVICE_NAME = 'ingest-api';
@@ -32,5 +36,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: env.LOG_LEVEL ?? 'info',
     prettyLogs: env.LOG_PRETTY === 'true',
     databaseUrl: env.DATABASE_URL ?? '',
+    engineUrl: env.ENGINE_URL ?? '',
+    pubsubTopic: env.PUBSUB_TOPIC ?? '',
   };
 }
