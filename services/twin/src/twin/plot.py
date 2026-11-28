@@ -20,7 +20,7 @@ def plot_twin(twin: Twin, out: Path) -> Path:
 
     matplotlib.use("Agg")  # draw to a file, no window needed
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Rectangle
+    from matplotlib.patches import Polygon
 
     fig, (by_tf, by_sub) = plt.subplots(1, 2, figsize=(14, 7), sharex=True, sharey=True)
     lons = [m.lon for m in twin.meters]
@@ -48,10 +48,9 @@ def plot_twin(twin: Twin, out: Path) -> Path:
     for ax in (by_tf, by_sub):
         for s in twin.suburbs:
             ax.add_patch(
-                Rectangle(
-                    (s.west, s.south),
-                    s.east - s.west,
-                    s.north - s.south,
+                Polygon(
+                    s.ring,
+                    closed=True,
                     fill=False,
                     linewidth=1,
                     linestyle="--",
