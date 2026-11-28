@@ -523,3 +523,41 @@ and `eval`, matching existing CI. Do not remove persistent local volumes during
 validation. Without Docker's daemon, cloud credentials and approved provisioning,
 container builds/startup, actual OIDC/IAM, Cloud Run rollout and database connections
 remain unverified. Local manifest tests do not substitute for those integrations.
+
+## Live path setup (#14, #16, #22) - steps after `terraform apply`
+
+`infra/gcp/data.tf` adds the smallest Cloud SQL instance (Postgres 17, `db-f1-micro`, 10 GB HDD,
+zonal, no backups), the `meter-silent` topic with a push subscription to the engine (OIDC, 5
+tries then the `meter-silent-dead-letter` topic), and makes ingest-api public, because Telstra's
+callbacks and the dashboard can't send Google ID tokens. Writes on ingest-api other than the LoC
+callback need the `ingest-admin-key` secret in `x-api-key`.
+
+`main.tf` also fixes the deploy login: this repo's GitHub OIDC tokens use the newer immutable
+subject (`repo:Shrishagwl@162850908/4-pillars@1454645919:environment:production`), which the
+old condition rejected ("The given credential is rejected by the attribute condition").
+
+Passwords never go through Terraform. After `terraform apply`, run (as a project owner):
+
+```bash
+INSTANCE=$(terraform -chdir=infra/gcp output -raw cloud_sql_connection)
+gcloud sql users create pillars_ingest --instance four-pillars-db --password "$(openssl rand -base64 24)"
+gcloud sql users create pillars_engine --instance four-pillars-db --password "$(openssl rand -base64 24)"
+# Then add one version to each secret, typed in, never committed:
+#   four-pillars-ingest-database-url: postgres://pillars_ingest:<pw>@/pillars?host=/cloudsql/$INSTANCE&options=-csearch_path%3Dingest
+#   four-pillars-engine-database-url: postgresql://pillars_engine:<pw>@/pillars?host=/cloudsql/$INSTANCE&options=-csearch_path%3Dengine
+#   four-pillars-ingest-admin-key:    any long random string
+gcloud secrets versions add four-pillars-ingest-database-url --data-file=-
+gcloud secrets versions add four-pillars-engine-database-url --data-file=-
+gcloud secrets versions add four-pillars-ingest-admin-key --data-file=-
+```
+
+Then set these GitHub variables and re-run CI on main to deploy:
+
+| Variable | Value |
+|---|---|
+| `GCP_CLOUD_SQL_INSTANCE` | the instance connection name (`terraform output github_variables`) |
+| `GCP_PUBSUB_TOPIC` | `meter-silent` |
+| `GCP_USE_APPLICATION_SECRETS` | `true` |
+| `GCP_ENABLED_SECRETS` | `ingest-database-url,engine-database-url,ingest-admin-key` (add the Telstra ones once they have versions, #36) |
+
+Each service creates its own schema and tables on start (the migrations from #14).

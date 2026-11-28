@@ -31,7 +31,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}) {
   const publisher = opts.publisher ?? publisherFromEnv(config);
   app.log.info({ publisher: publisher?.kind ?? 'none' }, 'event hand-off');
   await app.register(locCallbackRoutes, { store, publisher });
-  if (store) await app.register(meterRoutes, { store });
+  if (store) await app.register(meterRoutes, { store, apiKey: config.adminApiKey });
 
   return app;
 }

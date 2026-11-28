@@ -5,6 +5,7 @@ locals {
     engine-database-url   = "engine"
     telstra-client-id     = "telstra-gateway"
     telstra-client-secret = "telstra-gateway"
+    ingest-admin-key      = "ingest-api" # also readable by twin, see below
   }
   invocations = {
     ingest-engine  = { caller = "ingest-api", target = "engine" }
@@ -12,6 +13,7 @@ locals {
     gateway-fake   = { caller = "telstra-gateway", target = "telstra-fake" }
     twin-fake      = { caller = "twin", target = "telstra-fake" }
     twin-ingest    = { caller = "twin", target = "ingest-api" }
+    engine-ingest  = { caller = "engine", target = "ingest-api" } # reads the meter list
   }
 }
 
@@ -20,6 +22,7 @@ resource "google_project_service" "required" {
     "run.googleapis.com", "artifactregistry.googleapis.com", "secretmanager.googleapis.com",
     "iam.googleapis.com", "iamcredentials.googleapis.com", "sts.googleapis.com",
     "cloudresourcemanager.googleapis.com", "sqladmin.googleapis.com", "logging.googleapis.com",
+    "pubsub.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false
@@ -78,7 +81,7 @@ resource "google_secret_manager_secret_iam_member" "runtime" {
 }
 
 resource "google_project_iam_member" "cloud_sql_client" {
-  for_each = var.cloud_sql_instance == "" ? toset([]) : toset(["ingest-api", "engine"])
+  for_each = var.create_cloud_sql || var.cloud_sql_instance != "" ? toset(["ingest-api", "engine"]) : toset([])
   project  = var.project_id
   role     = "roles/cloudsql.client"
   member   = "serviceAccount:${google_service_account.runtime[each.key].email}"
@@ -164,7 +167,14 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "assertion.ref == 'refs/heads/main'",
     "assertion.event_name == 'workflow_run'",
     "assertion.workflow_ref == '${var.github_repository}/.github/workflows/deploy.yml@refs/heads/main'",
-    "assertion.sub == 'repo:${var.github_repository}:environment:production'",
+    # GitHub now issues "immutable" subjects (repo:OWNER@OWNER_ID/REPO@REPO_ID:...) for this
+    # repo; accept that form as well as the classic one, both pinned to the production env.
+    join("", [
+      "assertion.sub in [",
+      "'repo:${var.github_repository}:environment:production', ",
+      "'repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repository_id}:environment:production'",
+      "]",
+    ]),
   ])
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"

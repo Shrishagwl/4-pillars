@@ -53,6 +53,8 @@ jobs:
       GCP_CLOUD_SQL_INSTANCE: ${{ vars.GCP_CLOUD_SQL_INSTANCE }}
       GCP_LOG_LEVEL: ${{ vars.GCP_LOG_LEVEL || 'info' }}
       GCP_USE_APPLICATION_SECRETS: ${{ vars.GCP_USE_APPLICATION_SECRETS || 'false' }}
+      GCP_ENABLED_SECRETS: ${{ vars.GCP_ENABLED_SECRETS }}
+      GCP_PUBSUB_TOPIC: ${{ vars.GCP_PUBSUB_TOPIC }}
     steps:
       - uses: actions/checkout@v5
         with:

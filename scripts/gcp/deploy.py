@@ -14,13 +14,14 @@ SERVICES = ("telstra-fake", "telstra-gateway", "engine", "ingest-api", "twin")
 DEPENDENCIES = {
     "telstra-fake": {},
     "telstra-gateway": {"TELSTRA_BASE_URL": "telstra-fake"},
-    "engine": {"GATEWAY_URL": "telstra-gateway"},
+    "engine": {"GATEWAY_URL": "telstra-gateway", "INGEST_URL": "ingest-api"},
     "ingest-api": {"ENGINE_URL": "engine"},
     "twin": {"TELSTRA_FAKE_URL": "telstra-fake", "INGEST_URL": "ingest-api"},
 }
 SECRETS = {
-    "ingest-api": {"DATABASE_URL": "ingest-database-url"},
+    "ingest-api": {"DATABASE_URL": "ingest-database-url", "ADMIN_API_KEY": "ingest-admin-key"},
     "engine": {"DATABASE_URL": "engine-database-url"},
+    "twin": {"INGEST_API_KEY": "ingest-admin-key"},
     "telstra-gateway": {
         "TELSTRA_CLIENT_ID": "telstra-client-id",
         "TELSTRA_CLIENT_SECRET": "telstra-client-secret",
@@ -41,6 +42,10 @@ class Settings:
     cloud_sql_instance: str = ""
     log_level: str = "info"
     use_application_secrets: bool = False
+    # Short topic name ingest-api publishes to; empty keeps the HTTP hand-off.
+    pubsub_topic: str = ""
+    # Which secrets have a version yet. Empty with use_application_secrets = all of them.
+    enabled_secrets: tuple = ()
 
     def __post_init__(self):
         for value in (self.project, self.region, self.repository, self.service_prefix,
@@ -59,6 +64,11 @@ class Settings:
             raise ValueError("Cloud SQL instance must belong to the deployment project")
         if self.log_level not in {"debug", "info", "warn", "error"}:
             raise ValueError("Unsupported log level")
+        if self.pubsub_topic and not re.fullmatch(r"[a-z][a-z0-9-]*", self.pubsub_topic):
+            raise ValueError("Pub/Sub topic must be a short lowercase name")
+        known = {secret for names in SECRETS.values() for secret in names.values()}
+        if set(self.enabled_secrets) - known:
+            raise ValueError(f"Unknown secrets: {sorted(set(self.enabled_secrets) - known)}")
 
     @classmethod
     def from_env(cls):
@@ -77,6 +87,11 @@ class Settings:
             cloud_sql_instance=os.getenv("GCP_CLOUD_SQL_INSTANCE", ""),
             log_level=os.getenv("GCP_LOG_LEVEL") or "info",
             use_application_secrets=secret_opt_in == "true",
+            pubsub_topic=os.getenv("GCP_PUBSUB_TOPIC") or "",
+            enabled_secrets=tuple(
+                name.strip() for name in (os.getenv("GCP_ENABLED_SECRETS") or "").split(",")
+                if name.strip()
+            ),
         )
 
     def service_name(self, service):
@@ -102,6 +117,11 @@ def render_service(settings, service, image, urls):
     # Implemented scaffold routes need no credentials. Do not invent payloads just
     # to satisfy secret mounts; opt in only after valid versions have been added.
     secrets = SECRETS.get(service, {}) if settings.use_application_secrets else {}
+    if settings.enabled_secrets:
+        secrets = {k: v for k, v in secrets.items() if v in settings.enabled_secrets}
+    if service == "ingest-api" and settings.pubsub_topic:
+        env.append({"name": "PUBSUB_TOPIC",
+                    "value": f"projects/{settings.project}/topics/{settings.pubsub_topic}"})
     for key, secret in secrets.items():
         env.append({"name": key, "valueFrom": {"secretKeyRef": {
             "name": f"{settings.secret_prefix}-{secret}", "key": settings.secret_version,
