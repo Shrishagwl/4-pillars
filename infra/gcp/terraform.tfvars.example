@@ -1,0 +1,13 @@
+project_id           = "your-existing-gcp-project"
+region               = "australia-southeast1"
+github_repository    = "Shrishagwl/4-pillars"
+github_repository_id = "REPLACE_WITH_NUMERIC_REPOSITORY_ID"
+github_owner_id      = "REPLACE_WITH_NUMERIC_OWNER_ID"
+
+# Keep Terraform and GitHub variables in sync using `terraform output github_variables`.
+artifact_repository = "four-pillars"
+service_prefix      = "four-pillars"
+runtime_sa_prefix   = "fp"
+secret_prefix       = "four-pillars"
+# Optional existing Cloud SQL instance; otherwise use Neon over verified TLS.
+cloud_sql_instance = ""
