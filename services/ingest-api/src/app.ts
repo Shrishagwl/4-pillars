@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify from 'fastify';
+import type pg from 'pg';
 import type { Config } from './config.js';
 import { loggerOptions } from './logger.js';
 import { healthRoutes } from './routes/health.js';
@@ -9,6 +10,8 @@ import { locCallbackRoutes } from './routes/loc-callback.js';
 export interface BuildOptions {
   /** Turn logging off in tests. */
   logger?: boolean;
+  /** The ingest database. Left out in tests that don't need one. */
+  db?: pg.Pool;
 }
 
 export async function buildApp(config: Config, opts: BuildOptions = {}) {

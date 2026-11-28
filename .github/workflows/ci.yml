@@ -13,6 +13,19 @@ jobs:
   typescript:
     name: TypeScript (lint, typecheck, test, build)
     runs-on: ubuntu-latest
+    # A real Postgres for the migration and storage tests.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pillars
+          POSTGRES_PASSWORD: pillars-ci
+          POSTGRES_DB: pillars
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pillars" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://pillars:pillars-ci@localhost:5432/pillars
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -28,6 +41,19 @@ jobs:
   python:
     name: Python (${{ matrix.project }})
     runs-on: ubuntu-latest
+    # A real Postgres for the migration and storage tests.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pillars
+          POSTGRES_PASSWORD: pillars-ci
+          POSTGRES_DB: pillars
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pillars" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://pillars:pillars-ci@localhost:5432/pillars
     strategy:
       fail-fast: false
       matrix:

@@ -9,6 +9,8 @@ export interface Config {
   host: string;
   logLevel: string;
   prettyLogs: boolean;
+  /** Postgres, ingest schema. Empty = run without a database (tests, quick local runs). */
+  databaseUrl: string;
 }
 
 export const SERVICE_NAME = 'ingest-api';
@@ -29,5 +31,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? '0.0.0.0',
     logLevel: env.LOG_LEVEL ?? 'info',
     prettyLogs: env.LOG_PRETTY === 'true',
+    databaseUrl: env.DATABASE_URL ?? '',
   };
 }
