@@ -236,6 +236,26 @@ describe('telstra-gateway', () => {
     });
   });
 
+  it('TELSTRA_MODE=real uses Telstra hosts and needs credentials, without printing them', () => {
+    const real = loadConfig({
+      TELSTRA_MODE: 'real',
+      TELSTRA_CLIENT_ID: 'id-from-secret-manager',
+      TELSTRA_CLIENT_SECRET: 'secret-from-secret-manager',
+    });
+    expect(real.mode).toBe('real');
+    expect(real.telstraBaseUrl).toBe(
+      'https://prod.okapi.ogw.evolve.okapi.telstra.com/mobility/products-api',
+    );
+    expect(real.locationBaseUrl).toBe(
+      'https://prod.okapi.ogw.evolve.okapi.telstra.com/telstradev/v1/sandbox',
+    );
+    expect(real.authUrl).toContain('/og-network-auth-prod/');
+    expect(() => loadConfig({ TELSTRA_MODE: 'real', TELSTRA_CLIENT_ID: 'x' })).toThrow(
+      'TELSTRA_MODE=real needs TELSTRA_CLIENT_SECRET (from Secret Manager)',
+    );
+    expect(loadConfig({}).mode).toBe('fake');
+  });
+
   it('builds the real Telstra URLs from config', () => {
     const real = loadConfig({
       TELSTRA_BASE_URL: 'https://prod.okapi.ogw.evolve.okapi.telstra.com/mobility/products-api',

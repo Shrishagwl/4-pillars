@@ -98,6 +98,19 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(annotations["run.googleapis.com/cpu-throttling"], expected)
             self.assertEqual(annotations["autoscaling.knative.dev/minScale"], "0")
 
+    def test_real_telstra_mode_drops_the_fake_and_mounts_the_credentials(self):
+        settings = Settings(project="demo-project", region="australia-southeast1",
+                            use_application_secrets=True, telstra_mode="real",
+                            enabled_secrets=("telstra-client-id", "telstra-client-secret"))
+        env = {v["name"]: v for v in render_service(
+            settings, "telstra-gateway", self.images["telstra-gateway"], self.urls
+        )["spec"]["template"]["spec"]["containers"][0]["env"]}
+        self.assertEqual(env["TELSTRA_MODE"]["value"], "real")
+        self.assertNotIn("TELSTRA_BASE_URL", env)
+        self.assertIn("valueFrom", env["TELSTRA_CLIENT_SECRET"])
+        with self.assertRaises(ValueError):
+            Settings(project="demo-project", region="australia-southeast1", telstra_mode="prod")
+
     def test_pubsub_topic_goes_to_ingest_only(self):
         settings = Settings(project="demo-project", region="australia-southeast1",
                             pubsub_topic="meter-silent")

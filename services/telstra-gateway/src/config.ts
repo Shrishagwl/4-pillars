@@ -2,7 +2,17 @@
  * All settings come from environment variables so the same image runs locally,
  * in Docker Compose and on Cloud Run (which sets PORT for us).
  */
+export type TelstraMode = 'fake' | 'real';
+
+/** Telstra's real hosts, from the public docs (see docs/telstra-apis.md). */
+export const REAL_TELSTRA = {
+  base: 'https://prod.okapi.ogw.evolve.okapi.telstra.com/mobility/products-api',
+  location: 'https://prod.okapi.ogw.evolve.okapi.telstra.com/telstradev/v1/sandbox',
+};
+
 export interface Config {
+  /** "fake" = telstra-fake (default), "real" = Telstra's sandbox with real credentials. */
+  mode: TelstraMode;
   serviceName: string;
   version: string;
   port: number;
@@ -45,8 +55,17 @@ function int(value: string | undefined, fallback: number): number {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const telstraBaseUrl = (env.TELSTRA_BASE_URL || 'http://localhost:8083').replace(/\/$/, '');
+  const mode: TelstraMode = env.TELSTRA_MODE === 'real' ? 'real' : 'fake';
+  if (mode === 'real' && (!env.TELSTRA_CLIENT_ID || !env.TELSTRA_CLIENT_SECRET)) {
+    // Never print the values, only which ones are missing.
+    const missing = ['TELSTRA_CLIENT_ID', 'TELSTRA_CLIENT_SECRET'].filter((k) => !env[k]);
+    throw new Error(`TELSTRA_MODE=real needs ${missing.join(' and ')} (from Secret Manager)`);
+  }
+  const defaultBase = mode === 'real' ? REAL_TELSTRA.base : 'http://localhost:8083';
+  const telstraBaseUrl = (env.TELSTRA_BASE_URL || defaultBase).replace(/\/$/, '');
+  const defaultLocation = mode === 'real' ? REAL_TELSTRA.location : telstraBaseUrl;
   return {
+    mode,
     serviceName: SERVICE_NAME,
     version: env.APP_VERSION ?? 'dev',
     port: int(env.PORT, DEFAULT_PORT),
@@ -54,7 +73,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: env.LOG_LEVEL ?? 'info',
     prettyLogs: env.LOG_PRETTY === 'true',
     telstraBaseUrl,
-    locationBaseUrl: (env.TELSTRA_LOCATION_BASE_URL || telstraBaseUrl).replace(/\/$/, ''),
+    locationBaseUrl: (env.TELSTRA_LOCATION_BASE_URL || defaultLocation).replace(/\/$/, ''),
     authUrl: env.TELSTRA_AUTH_URL || new URL(telstraBaseUrl).origin + TOKEN_PATH,
     // telstra-fake takes any id and secret; real ones come from Secret Manager (#36).
     clientId: env.TELSTRA_CLIENT_ID || 'local',
