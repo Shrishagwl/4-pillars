@@ -42,6 +42,19 @@ export function VerdictCard({ incident, now, done, onAct, onDetails }: Props) {
         </div>
       </div>
 
+      {incident.summary && (
+        <section className="verdict-card__summary">
+          <h3 className="eyebrow eyebrow--caps">Summary</h3>
+          <p className="small">{incident.summary}</p>
+          {incident.notice && (
+            <>
+              <h3 className="eyebrow eyebrow--caps verdict-card__notice">Draft customer notice</h3>
+              <p className="small muted">{incident.notice}</p>
+            </>
+          )}
+        </section>
+      )}
+
       <ProbabilityBars incident={incident} />
 
       <div className="button-row">

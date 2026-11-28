@@ -50,5 +50,9 @@ export const Verdict = Type.Object({
   action: Action,
   evidence: Type.Array(Type.String()),
   updatedAt: Type.String({ format: 'date-time' }),
+  /** Plain-English summary for the operator (engine/summary.py). Never changes the verdict. */
+  summary: Type.Optional(Type.String()),
+  /** Draft message for affected customers. Empty when none should be sent. */
+  notice: Type.Optional(Type.String()),
 });
 export type Verdict = Static<typeof Verdict>;

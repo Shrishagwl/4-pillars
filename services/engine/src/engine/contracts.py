@@ -62,3 +62,6 @@ class Verdict(BaseModel):
     action: Action
     evidence: list[str]
     updatedAt: datetime
+    # Written by summary.py after the verdict is decided. Never changes the fields above.
+    summary: str | None = None
+    notice: str | None = None

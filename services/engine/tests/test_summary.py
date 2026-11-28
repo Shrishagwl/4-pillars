@@ -2,10 +2,17 @@ import json
 
 from test_pipeline import NOW, TOPOLOGY, network_outage_in_carlton, power_outage_on
 
+from engine.config import Settings
 from engine.contracts import Action, Cause
 from engine.evidence import to_verdict
 from engine.pipeline import assess
-from engine.summary import build_prompt, summarise, template_summary
+from engine.summary import (
+    build_prompt,
+    generator_from_settings,
+    summarise,
+    template_summary,
+    with_summary,
+)
 
 
 def verdict_for(events, **kwargs):
@@ -76,3 +83,25 @@ def test_the_llm_cannot_change_the_verdict():
     summarise(POWER, argues)
     assert before == POWER
     assert POWER.cause is Cause.POWER and POWER.action is Action.DISPATCH_POWER_CREW
+
+
+def test_with_summary_fills_the_card_fields_and_nothing_else():
+    card = with_summary(POWER)
+    assert card.summary == template_summary(POWER).summary
+    assert card.notice == template_summary(POWER).notice
+    assert card.model_dump(exclude={"summary", "notice"}) == POWER.model_dump(
+        exclude={"summary", "notice"}
+    )
+    assert POWER.summary is None  # the original is left alone
+
+
+def test_with_summary_even_if_the_model_tries_to_change_the_cause():
+    reply = json.dumps({"summary": "This is really tampering.", "notice": "", "cause": "TAMPER"})
+    card = with_summary(POWER, lambda _prompt: reply)
+    assert card.cause is Cause.POWER and card.action is Action.DISPATCH_POWER_CREW
+    assert card.summary == "This is really tampering."
+
+
+def test_gemini_is_only_used_when_switched_on_and_set_up():
+    assert generator_from_settings(Settings(llm_summary=False, gcp_project="p")) is None
+    assert generator_from_settings(Settings(llm_summary=True, gcp_project="")) is None
