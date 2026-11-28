@@ -75,6 +75,8 @@ services:
       PORT: 8084
       LOG_LEVEL: ${LOG_LEVEL:-info}
       GATEWAY_URL: http://telstra-gateway:8082
+      # The meter list. ingest-api starts after the engine, so the engine retries until it's up.
+      INGEST_URL: http://ingest-api:8081
       DATABASE_URL: postgresql://pillars:${POSTGRES_PASSWORD:-pillars-local}@postgres:5432/pillars?options=-csearch_path%3Dengine
     ports: ["8084:8084"]
     depends_on:
