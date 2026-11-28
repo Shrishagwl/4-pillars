@@ -34,9 +34,12 @@ class DeploymentTests(unittest.TestCase):
 
     def test_dependency_urls_and_secret_isolation(self):
         expected = {
-            "ingest-api": ({"ENGINE_URL": "engine"}, {"DATABASE_URL": "ingest-database-url"}),
-            "engine": ({"GATEWAY_URL": "telstra-gateway"}, {"DATABASE_URL": "engine-database-url"}),
-            "twin": ({"INGEST_URL": "ingest-api", "TELSTRA_FAKE_URL": "telstra-fake"}, {}),
+            "ingest-api": ({"ENGINE_URL": "engine"}, {"DATABASE_URL": "ingest-database-url",
+                                                     "ADMIN_API_KEY": "ingest-admin-key"}),
+            "engine": ({"GATEWAY_URL": "telstra-gateway", "INGEST_URL": "ingest-api"},
+                       {"DATABASE_URL": "engine-database-url"}),
+            "twin": ({"INGEST_URL": "ingest-api", "TELSTRA_FAKE_URL": "telstra-fake"},
+                     {"INGEST_API_KEY": "ingest-admin-key"}),
             "telstra-gateway": ({"TELSTRA_BASE_URL": "telstra-fake"}, {
                 "TELSTRA_CLIENT_ID": "telstra-client-id", "TELSTRA_CLIENT_SECRET": "telstra-client-secret"
             }),
@@ -73,6 +76,32 @@ class DeploymentTests(unittest.TestCase):
                                       "GCP_REGION": "australia-southeast1",
                                       "GCP_USE_APPLICATION_SECRETS": "true"}, clear=True):
             self.assertTrue(Settings.from_env().use_application_secrets)
+
+    def test_only_secrets_with_versions_are_mounted(self):
+        settings = Settings(project="demo-project", region="australia-southeast1",
+                            use_application_secrets=True,
+                            enabled_secrets=("ingest-database-url", "engine-database-url"))
+        gateway = render_service(settings, "telstra-gateway", self.images["telstra-gateway"], self.urls)
+        ingest = render_service(settings, "ingest-api", self.images["ingest-api"], self.urls)
+        secret_env = lambda m: {v["name"] for v in m["spec"]["template"]["spec"]["containers"][0]["env"]
+                                if "valueFrom" in v}
+        self.assertEqual(secret_env(gateway), set())
+        self.assertEqual(secret_env(ingest), {"DATABASE_URL"})
+        with self.assertRaises(ValueError):
+            Settings(project="demo-project", region="australia-southeast1", enabled_secrets=("nope",))
+
+    def test_pubsub_topic_goes_to_ingest_only(self):
+        settings = Settings(project="demo-project", region="australia-southeast1",
+                            pubsub_topic="meter-silent")
+        for name in SERVICES:
+            env = {v["name"]: v.get("value") for v in render_service(
+                settings, name, self.images[name], self.urls)["spec"]["template"]["spec"]["containers"][0]["env"]}
+            if name == "ingest-api":
+                self.assertEqual(env["PUBSUB_TOPIC"], "projects/demo-project/topics/meter-silent")
+            else:
+                self.assertNotIn("PUBSUB_TOPIC", env)
+        with self.assertRaises(ValueError):
+            Settings(project="demo-project", region="australia-southeast1", pubsub_topic="Bad Topic")
 
     def test_invalid_secret_opt_in_fails_closed(self):
         with patch.dict("os.environ", {"GCP_PROJECT_ID": "demo-project",

@@ -70,7 +70,25 @@ variable "workload_identity_pool_id" {
 }
 
 variable "cloud_sql_instance" {
-  description = "Optional existing same-project PROJECT:REGION:INSTANCE; empty selects Neon. No SQL instance is created."
+  description = "Optional existing same-project PROJECT:REGION:INSTANCE. Only used when create_cloud_sql is false; empty then means an external Postgres (e.g. Neon)."
   type        = string
   default     = ""
+}
+
+variable "create_cloud_sql" {
+  description = "Create the smallest Cloud SQL Postgres 17 instance for ingest-api and engine."
+  type        = bool
+  default     = true
+}
+
+variable "cloud_sql_tier" {
+  description = "Machine tier. db-f1-micro is the cheapest shared-core tier."
+  type        = string
+  default     = "db-f1-micro"
+}
+
+variable "ingest_public" {
+  description = "Let Telstra's callbacks and the dashboard reach ingest-api without a Google identity."
+  type        = bool
+  default     = true
 }

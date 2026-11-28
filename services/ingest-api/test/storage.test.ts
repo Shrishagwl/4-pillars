@@ -86,4 +86,18 @@ describe.skipIf(!url)('ingest-api with a database', () => {
     expect(list.meters).toEqual([{ ...meter, transformerId: 'T-02', state: 'VIC' }]);
     expect((await put([{ ...meter, msisdn: '0412' }])).statusCode).toBe(400);
   });
+
+  it('asks for the API key on writes when one is configured', async () => {
+    const locked = await buildApp(loadConfig({ ADMIN_API_KEY: 'k3y' }), {
+      logger: false,
+      db: pool,
+    });
+    const put = (headers: Record<string, string>) =>
+      locked.inject({ method: 'PUT', url: '/meters', headers, payload: { meters: [] } });
+    expect((await put({})).statusCode).toBe(401);
+    expect((await put({ 'x-api-key': 'wrong' })).statusCode).toBe(401);
+    expect((await put({ 'x-api-key': 'k3y' })).statusCode).toBe(200);
+    expect((await locked.inject({ method: 'GET', url: '/meters' })).statusCode).toBe(200);
+    await locked.close();
+  });
 });

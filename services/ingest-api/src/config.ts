@@ -15,6 +15,8 @@ export interface Config {
   engineUrl: string;
   /** Cloud hand-off: projects/<project>/topics/meter-silent. Wins over engineUrl when set. */
   pubsubTopic: string;
+  /** When set, write routes other than Telstra's callback need it in `x-api-key`. */
+  adminApiKey: string;
 }
 
 export const SERVICE_NAME = 'ingest-api';
@@ -38,5 +40,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl: env.DATABASE_URL ?? '',
     engineUrl: env.ENGINE_URL ?? '',
     pubsubTopic: env.PUBSUB_TOPIC ?? '',
+    adminApiKey: env.ADMIN_API_KEY ?? '',
   };
 }

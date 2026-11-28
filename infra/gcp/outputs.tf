@@ -9,7 +9,8 @@ output "github_variables" {
     GCP_SERVICE_PREFIX             = var.service_prefix
     GCP_RUNTIME_SA_PREFIX          = var.runtime_sa_prefix
     GCP_SECRET_PREFIX              = var.secret_prefix
-    GCP_CLOUD_SQL_INSTANCE         = var.cloud_sql_instance
+    GCP_CLOUD_SQL_INSTANCE         = local.cloud_sql_connection
+    GCP_PUBSUB_TOPIC               = google_pubsub_topic.meter_silent.name
   }
 }
 
@@ -19,4 +20,8 @@ output "service_urls" {
 
 output "secret_names" {
   value = { for name, secret in google_secret_manager_secret.credentials : name => secret.secret_id }
+}
+
+output "cloud_sql_connection" {
+  value = local.cloud_sql_connection
 }
