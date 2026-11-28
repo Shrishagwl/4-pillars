@@ -12,6 +12,7 @@
 import type { Cause, Incident, Meter } from '../types.ts';
 import { chooseAction } from '../utils/costs.ts';
 import { dollars } from '../utils/format.ts';
+import { templateSummary } from '../utils/summary.ts';
 
 // ---------- The map, copied from the twin ----------
 
@@ -219,6 +220,7 @@ function makeIncident(recipe: IncidentRecipe, allMeters: Meter[], now: number): 
     action: choice.action,
     evidence,
     updatedAt: new Date(updatedAt).toISOString(),
+    ...templateSummary({ meterCount: meters.length, cause, confidence, action: choice.action }),
     suburb,
     postcode,
     transformerIds,

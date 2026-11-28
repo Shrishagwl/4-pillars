@@ -548,6 +548,19 @@
   margin-bottom: 2px;
 }
 
+.verdict-card__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.verdict-card__notice {
+  margin-top: 6px;
+}
+
 .donut {
   position: relative;
   flex: none;

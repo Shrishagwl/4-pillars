@@ -13,6 +13,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .config import Settings
 from .contracts import Action, Cause, Verdict
 
 log = logging.getLogger(__name__)
@@ -106,6 +107,29 @@ def summarise(verdict: Verdict, generate: Generate | None = None) -> IncidentSum
         log.warning("LLM summary failed, using the template", exc_info=True)
         return template_summary(verdict)
     return IncidentSummary(summary, notice, "gemini")
+
+
+def with_summary(verdict: Verdict, generate: Generate | None = None) -> Verdict:
+    """The same verdict with `summary` and `notice` filled in, ready for the dashboard card.
+
+    Only those two fields change. Cause, confidence, action and evidence are copied as they are.
+    """
+    written = summarise(verdict, generate)
+    return verdict.model_copy(update={"summary": written.summary, "notice": written.notice})
+
+
+def generator_from_settings(settings: Settings) -> Generate | None:
+    """Gemini if it is switched on and set up, otherwise None (which means: use the template)."""
+    if not settings.llm_summary:
+        return None
+    if not settings.gcp_project:
+        log.warning("LLM_SUMMARY is on but GCP_PROJECT is empty, using the template")
+        return None
+    try:
+        return gemini_generator(settings.gcp_project, settings.gcp_location, settings.gemini_model)
+    except Exception:  # noqa: BLE001  (package missing or no credentials: use the template)
+        log.warning("could not start Gemini, using the template", exc_info=True)
+        return None
 
 
 def gemini_generator(project: str, location: str, model: str) -> Generate:
