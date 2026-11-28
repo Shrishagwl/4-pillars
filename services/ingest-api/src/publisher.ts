@@ -16,7 +16,7 @@ const METADATA =
   'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default';
 
 /** On Cloud Run, an ID token for calling another private Cloud Run service. */
-async function idToken(audience: string, fetchImpl: Fetch): Promise<Record<string, string>> {
+export async function idToken(audience: string, fetchImpl: Fetch): Promise<Record<string, string>> {
   if (!process.env.K_SERVICE || !new URL(audience).hostname.endsWith('.run.app')) return {};
   const res = await fetchImpl(
     `${METADATA}/identity?audience=${encodeURIComponent(new URL(audience).origin)}`,

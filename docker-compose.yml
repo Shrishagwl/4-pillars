@@ -105,7 +105,8 @@ services:
     build:
       context: .
       dockerfile: apps/dashboard/Dockerfile
-      args: { VITE_INGEST_URL: "http://localhost:8081" }
+      # The Compose demo shows live incidents; the app on its own defaults to mock data.
+      args: { VITE_INGEST_URL: "http://localhost:8081", VITE_DATA_SOURCE: "api" }
     ports: ["3000:80"]
     depends_on:
       ingest-api: { condition: service_healthy }

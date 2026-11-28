@@ -53,5 +53,8 @@ export const meterRoutes: FastifyPluginAsyncTypebox<{
     },
   );
 
-  app.get('/meters', async () => ({ meters: await store.listMeters() }));
+  app.get('/meters', async (_req, reply) => {
+    reply.header('access-control-allow-origin', '*'); // the dashboard draws them on the map
+    return { meters: await store.listMeters() };
+  });
 };
