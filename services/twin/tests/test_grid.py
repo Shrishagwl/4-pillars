@@ -19,31 +19,40 @@ from twin.grid import (
 SEEDS = [0, 1, 7, 42, 123]
 
 
-def test_grid_has_four_suburbs_covering_the_box():
+def test_four_real_neighbouring_suburbs_from_the_abs():
     suburbs = make_suburbs()
-    assert len(suburbs) == 4
-    names = {s.name for s in suburbs}
-    assert names == {"Pascoe Vale South", "Coburg", "Brunswick West", "Brunswick"}
+    assert {(s.name, s.postcode, s.sal_code) for s in suburbs} == {
+        ("Coburg", "3058", "20596"),
+        ("Brunswick", "3056", "20361"),
+        ("Brunswick West", "3055", "20363"),
+        ("Pascoe Vale South", "3044", "22042"),
+    }
     assert min(s.south for s in suburbs) == SOUTH
     assert max(s.east for s in suburbs) == EAST
 
 
-def test_point_on_a_shared_border_belongs_to_exactly_one_suburb():
+def test_landmarks_fall_in_the_right_suburb():
     suburbs = make_suburbs()
-    mid_lat = (NORTH + SOUTH) / 2
-    mid_lon = (WEST + EAST) / 2
-    owners = [s for s in suburbs if s.contains(mid_lat, mid_lon)]
-    assert len(owners) == 1
+    # Coburg's town centre on Sydney Road, and Brunswick's around Sydney Road / Victoria St.
+    assert suburb_of(-37.7440, 144.9630, suburbs).name == "Coburg"
+    assert suburb_of(-37.7680, 144.9610, suburbs).name == "Brunswick"
+    assert suburb_of(-37.7650, 144.9420, suburbs).name == "Brunswick West"
+    assert suburb_of(-37.7440, 144.9370, suburbs).name == "Pascoe Vale South"
 
 
-def test_point_outside_the_box_has_no_suburb():
+def test_neighbours_share_a_border_without_overlapping():
+    suburbs = make_suburbs()
+    # A grid of points over the area: none may be inside two suburbs.
+    for i in range(40):
+        for j in range(40):
+            lat = SOUTH + (NORTH - SOUTH) * (i + 0.5) / 40
+            lon = WEST + (EAST - WEST) * (j + 0.5) / 40
+            assert sum(s.contains(lat, lon) for s in suburbs) <= 1
+
+
+def test_point_outside_the_area_has_no_suburb():
     assert suburb_of(-37.0, 145.5, make_suburbs()) is None
-
-
-def test_point_on_the_outer_north_edge_has_no_suburb():
-    # Half-open intervals leave the box's own north and east edges outside every suburb.
-    # build_twin redraws such points, so no meter can end up there.
-    assert suburb_of(NORTH, (WEST + EAST) / 2, make_suburbs()) is None
+    assert suburb_of(NORTH + 0.01, (WEST + EAST) / 2, make_suburbs()) is None
 
 
 # --- build_twin (#6) ---------------------------------------------------------------------------

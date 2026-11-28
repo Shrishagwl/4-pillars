@@ -36,7 +36,9 @@ fault, every run comes with an answer key, which is what the eval scores the eng
 | `export.py`, `__main__.py` | Writes runs to files; the `python -m twin run` command. | #32 |
 | `plot.py` | The map picture. | #6 |
 
-The map is a 2 x 2 grid of stand-in suburbs around Coburg. Meters cluster around their
+The map is four real neighbouring Melbourne suburbs: Coburg (3058), Brunswick (3056),
+Brunswick West (3055) and Pascoe Vale South (3044), using the ABS SAL 2021 boundaries in
+`src/twin/data/suburbs.geojson` (simplified to ~10 m). Meters cluster around their
 transformer, so transformers near a border feed meters in two suburbs. That overlap matters:
 a power outage follows a transformer, a network outage follows a suburb, and if the two
 matched exactly the engine could never tell them apart.
@@ -45,11 +47,11 @@ matched exactly the engine could never tell them apart.
 
 | Kind | Answer | What happens | LoC codes |
 |---|---|---|---|
-| `power` | POWER | Every meter on one transformer drops within 10 s. | ~70% code 6 (last gasp) at once, the rest code 7 two to four minutes later |
-| `network` | NETWORK | 60-90% of one suburb loses signal over ~3 minutes, across many transformers. Telstra lists the outage 10-30 minutes in. | all code 7 (the meters still have power, so no last gasp) |
-| `meter` | METER_FAULT | One meter dies on its own; a technician replaces it later. | one code 7 |
-| `tamper` | TAMPER | One meter is unplugged and taken away; 5-30 minutes later its SIM comes back online 2-10 km away. | one code 6 or 7; then Location Verification would answer FALSE for its address |
-| `noise` (not a fault) | none | A normal day: now and then a meter loses signal for 1-15 minutes and comes back by itself. | code 7 only if it outlasts the detection timer |
+| `power` | POWER | Every meter on one transformer drops within 10 s. | ~70% a last gasp (code 0 on 4G, 6 on 5G) at once, the rest a timeout (2 or 7) two to four minutes later |
+| `network` | NETWORK | 60-90% of one suburb loses signal over ~3 minutes, across many transformers. Telstra lists the outage 10-30 minutes in. | all detection timeouts, code 2 (4G) or 7 (5G): the meters still have power, so no last gasp |
+| `meter` | METER_FAULT | One meter dies on its own; a technician replaces it later. | one timeout (2 or 7) |
+| `tamper` | TAMPER | One meter is unplugged and taken away; 5-30 minutes later its SIM comes back online 2-10 km away. | one last gasp or timeout; then Location Verification would answer FALSE for its address |
+| `noise` (not a fault) | none | A normal day: now and then a meter loses signal for 1-15 minutes and comes back by itself. | a timeout only if it outlasts the detection timer |
 
 The default numbers match the engine's own test fixtures. They still need checking against
 real-world research (#23).
@@ -97,8 +99,12 @@ each `LocReport` into a `MeterSilentEvent`, and score the verdicts against `answ
 
 ## Not done yet
 
-- **#26 real suburbs.** Only `Suburb.contains` needs to change (point-in-polygon on the ABS
-  shapes); everything else asks "which suburb is this point in?" through `suburb_of`.
-- **#23 calibration.** Compare the defaults above with the research in #3 and adjust them.
 - **#35 Cloud Run service.** `main.py` is still the template. The plan is endpoints to start a
   scenario and stream its events to telstra-fake and ingest-api.
+
+## Attribution
+
+Suburb boundaries: Australian Bureau of Statistics, Australian Statistical Geography Standard
+(ASGS) Edition 3, Suburbs and Localities (SAL) 2021, licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Queried from the ABS ASGS 2021 SAL map
+service and simplified.
